@@ -8,7 +8,7 @@
 """
 import unittest
 from unittest import mock
-from tethysapp.uit_plus_job.oauth2 import UitPlusOAuth2
+from uit_plus_job.oauth2 import UitPlusOAuth2
 
 
 class UitPlusOAuth2Tests(unittest.TestCase):

@@ -1,13 +1,14 @@
 import unittest
 import mock
-from tethysapp.uit_plus_job.models import UitPlusJob
+from uit_plus_job.models import UitPlusJob
 from django.contrib.auth.models import User
 from datetime import timedelta
 from pytz import timezone
 from django.core.exceptions import ValidationError
+from django.test import TestCase
 
 
-class TestUitPlusJob(unittest.TestCase):
+class TestUitPlusJob(TestCase):
 
     def setUp(self):
         self.tz = timezone('America/Denver')
@@ -96,7 +97,7 @@ class TestUitPlusJob(unittest.TestCase):
         home_dir = self.uitplusjob.job_home_dir
         self.assertIn('${HOME}/test_label/uit_job', home_dir)
 
-    @mock.patch('tethysapp.uit_plus_job.models.Client')
+    @mock.patch('uit_plus_job.models.Client')
     def test_get_client(self, mock_client):
         mock_client_ret = mock.MagicMock()
         mock_client.return_value = mock_client_ret
@@ -195,8 +196,8 @@ class TestUitPlusJob(unittest.TestCase):
         self.assertIn('module load test_load', ret)
         self.assertIn('PBSScript', ret)
 
-    @mock.patch('tethysapp.uit_plus_job.models.UitPlusJob.generate_pbs_script')
-    @mock.patch('tethysapp.uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('uit_plus_job.models.UitPlusJob.generate_pbs_script')
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
     @mock.patch('django.db.models.base.Model.save')
     def test__execute(self, mock_save, mock_client, mock_pbs):
         mock_client_return = mock.MagicMock()
@@ -223,7 +224,7 @@ class TestUitPlusJob(unittest.TestCase):
 
         mock_save.assert_called()
 
-    @mock.patch('tethysapp.uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
     def test_stop(self, mock_client):
         mock_client_return = mock.MagicMock()
         mock_client.return_value = mock_client_return
@@ -235,7 +236,7 @@ class TestUitPlusJob(unittest.TestCase):
         self.assertIn('${WORKDIR}/test_label/uit_job/', call_args[0][1]['work_dir'])
         self.assertIn('qdel J0001', call_args[0][1]['command'])
 
-    @mock.patch('tethysapp.uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
     def test_pause(self, mock_client):
         mock_client_return = mock.MagicMock()
         mock_client.return_value = mock_client_return
@@ -248,7 +249,7 @@ class TestUitPlusJob(unittest.TestCase):
         self.assertIn('${WORKDIR}/test_label/uit_job/', call_args[0][1]['work_dir'])
         self.assertIn('qhold J0001', call_args[0][1]['command'])
 
-    @mock.patch('tethysapp.uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
     def test_resume(self, mock_client):
         mock_client_return = mock.MagicMock()
         mock_client.return_value = mock_client_return
@@ -261,8 +262,8 @@ class TestUitPlusJob(unittest.TestCase):
         self.assertIn('${WORKDIR}/test_label/uit_job/', call_args[0][1]['work_dir'])
         self.assertIn('qrls J0001', call_args[0][1]['command'])
 
-    @mock.patch('tethysapp.uit_plus_job.models.UitPlusJob.render_clean_block')
-    @mock.patch('tethysapp.uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('uit_plus_job.models.UitPlusJob.render_clean_block')
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
     def test_clean(self, mock_client, mock_pbs):
         mock_client_return = mock.MagicMock()
         mock_client.return_value = mock_client_return
@@ -286,7 +287,7 @@ class TestUitPlusJob(unittest.TestCase):
         self.assertIn('archive rm ${WORKDIR}/test_label/uit_job/', res)
         self.assertIn('archive rm ${HOME}/test_label/uit_job/', res)
 
-    @mock.patch('tethysapp.uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
     def test_process_results(self, mock_client):
         mock_client_return = mock.MagicMock()
         mock_client.return_value = mock_client_return
@@ -294,3 +295,16 @@ class TestUitPlusJob(unittest.TestCase):
         self.uitplusjob._process_results(token='token')
 
         # TODO: Need to finish this. after we can test on the super computer.
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('django.db.models.base.Model.save')
+    def test_update_status(self, mock_save, mock_client):
+        mock_client_return = mock.MagicMock()
+        mock_client.return_value = mock_client_return
+
+        self.uitplusjob._update_status(token='token')
+
+        # TODO: revist here to add the call_args
+        mock_client_return.call.assert_called()
+
+        mock_save.assert_called()
