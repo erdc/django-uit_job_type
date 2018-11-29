@@ -1,28 +1,36 @@
 # Put your persistent store models in this file
 import os
 import uuid
+import types
+import datetime as dt
 from django.db import models
 from picklefield import PickledObjectField
 from jinja2 import Template
 from uit.uit import Client
 from uit.pbs_script import PbsScript, PbsDirective
 from tethys_compute.models.tethys_job import TethysJob
-
-
-UIT_to_TETHYS_STATUSES = (
-    ('PEN', 'PEN'),
-    ('SUB', 'SUB'),
-    ('RUN', 'RUN'),
-    ('COM', 'COM'),
-    ('ERR', 'ERR'),
-    ('ABT', 'ABT'),
-)
+from uit_plus_job.util import strfdelta
 
 
 class UitPlusJob(TethysJob):
     """
     UIT+ Job type.
     """
+    UIT_TO_TETHYS_STATUSES = {
+        'B': 'RUN',  # Array job: at least one subjob has started
+        'E': 'COM',  # Job is exiting after having run.
+        'F': 'COM',  # Job is finished.
+        'H': 'PEN',  # Job is held.
+        'M': 'PEN',  # Job was moved to another server.
+        'Q': 'PEN',  # Job is queued.
+        'R': 'RUN',  # Job is running.
+        'S': 'ABT',  # Job is suspended.
+        'T': 'PEN',  # Job is being moved to a new location.
+        'U': 'ABT',  # Cycle-harvesting job is suspended due to keyboard activity.
+        'W': 'PEN',  # Job is waiting for its submitter-assigned start time to be reached.
+        'X': 'PEN',  # Subjob has completed execution or has been deleted.
+    }
+
     SYSTEM_CHOICES = (
         ('topaz', 'topaz'),
         ('onyx', 'onyx'),
@@ -41,6 +49,7 @@ class UitPlusJob(TethysJob):
     num_nodes = models.IntegerField(default=1, null=False)
     processes_per_node = models.IntegerField(default=1, null=False)
     max_time = models.DurationField(null=False)
+    max_cleanup_time = models.DurationField(null=False, default=dt.timedelta(hours=1))
     queue = models.CharField(max_length=100, default='debug', null=False)
     job_script = models.TextField(null=False)
     transfer_job_script = models.BooleanField(default=True)
@@ -64,7 +73,17 @@ class UitPlusJob(TethysJob):
             return ''
 
     @property
-    def remote_workspace(self):
+    def token(self):
+        if not getattr(self, '_token', None) or self._token is None:
+            try:
+                social = self.user.social_auth.get(provider='UITPlus')
+                self._token = social.extra_data['access_token']
+            except (KeyError, AttributeError):
+                self._token = None
+        return self._token
+
+    @property
+    def remote_workspace_suffix(self):
         if not self._remote_workspace:
             workspace_path = os.path.join(self.label, self.name, str(self._remote_workspace_id))
             self._remote_workspace = workspace_path
@@ -73,27 +92,83 @@ class UitPlusJob(TethysJob):
     # job work directory
     @property
     def work_dir(self):
-        return os.path.join("${WORKDIR}", self.remote_workspace)
+        if not getattr(self, '_work_dir', None):
+            WORKDIR = self.get_environment_variable('WORKDIR')
+            self._work_dir = os.path.join(WORKDIR, self.remote_workspace_suffix)
+        return self._work_dir
 
     # job archive directory
     @property
     def archive_dir(self):
-        return os.path.join("${ARCHIVE_HOME}", self.remote_workspace)
+        if not getattr(self, '_archive_dir', None):
+            ARCHIVE_HOME = self.get_environment_variable('ARCHIVE_HOME')
+            self._archive_dir = os.path.join(ARCHIVE_HOME, self.remote_workspace_suffix)
+        return self._archive_dir
 
     # job home directory
     @property
     def home_dir(self):
-        return os.path.join("${HOME}", self.remote_workspace)
+        if not getattr(self, '_home_dir', None):
+            HOME = self.get_environment_variable('HOME')
+            self._home_dir = os.path.join(HOME, self.remote_workspace_suffix)
+        return self._home_dir
 
-    def get_client(self, token):
-        # Create a client with token
-        client = Client(token=token)
+    @property
+    def client(self):
+        if not getattr(self, '_client', None) or self._client is None:
+            # Create a client with token
+            self._client = Client(token=self.token)
 
-        # Connect the client
-        client.connect(system=self.system)
+            # Connect the client
+            self._client.connect(system=self.system)
 
         # return the client
-        return client
+        return self._client
+
+    def invoke_on_client(self, method, retries=3, **kwargs):
+        """
+        Robust wrapper around client methods. Will retry, reties times if failed due to DP routing error.
+        """
+        # Validate method is method on client
+        attempts = 1
+        client_method = getattr(self.client, method, None)
+
+        if not client_method or not isinstance(client_method, types.MethodType):
+            raise ValueError('{} is not a valid method of UIT Client.')
+
+        last_exception = None
+
+        while attempts <= retries:
+            try:
+                ret = client_method(**kwargs)
+                return ret
+            except RuntimeError as e:
+                # "DP Route error" indicates failure of SSH Tunnel client on UIT Plus server.
+                # Successive calls should work.
+                if 'DP Route error' in str(e):
+                    attempts += 1
+                    last_exception = e
+                    continue
+                else:
+                    # Raise other Runtime Errors
+                    raise
+
+        kwarg_str = ', '.join(['{}="{}"'.format(k, v) for k, v in kwargs.items()])
+        raise RuntimeError('Max number of retries reached without success for '
+                           'method: {}({}). Last exception encountered: {}'.format(method, kwarg_str, last_exception))
+
+    def get_environment_variable(self, variable):
+        """
+        Get the value of an environment variable.
+        :Args:
+            variable(str): name of environment variable (e.g.: "WORKDIR").
+
+        Returns:
+            str: value of environment variable.
+        """
+        command = 'echo ${}'.format(variable)
+        ret = self.invoke_on_client('call', command=command, work_dir='/tmp')
+        return ret.strip()
 
     def set_directive(self, directive, value):
         # Save the result
@@ -120,12 +195,15 @@ class UitPlusJob(TethysJob):
         return self._modules
 
     def render_execution_block(self):
+        cleanup_walltime = strfdelta(self.max_cleanup_time, '%H:%M:%S')
+
         context = {
             'job_work_dir': self.work_dir,
             'job_archive_dir': self.archive_dir,
             'job_home_dir': self.home_dir,
             'executable': self.job_script_name,
             'project_id': self.project_id,
+            'cleanup_walltime': cleanup_walltime,
             'archive_input_files': self.archive_input_files,
             'home_input_files': self.home_input_files,
             'archive_output_files': self.archive_output_files,
@@ -162,58 +240,90 @@ class UitPlusJob(TethysJob):
         # Assign PbsScript.execution_block from UitPlusJob.render_execution_block()
         pbs_script.execution_block = self.render_execution_block()
 
-        return pbs_script.render()
+        return pbs_script
 
-    def _execute(self, token):
-        # Get client using get_client() method
-        client = self.get_client(token=token)
+    def _execute(self):
+        # Get client
+        client = self.client
 
         # Setup working directory on supercomputer
-        # using client.call() method
-        import pdb; pdb.set_trace()
         command = 'mkdir -p ' + self.work_dir
-        ret = client.call(command=command, work_dir='${WORKDIR}')
+        ret = self.invoke_on_client(method='call', command=command, work_dir='/tmp')
 
-        # TODO: Check to make sure the directory was created before moving on... Raise exception if error occurs? Unless the dir already exists.
+        # if not ret:
+        #     raise RuntimeError('An error occurred while setting up job directory on {}'.format(self.system))
 
         # Transfer any files listed in transfer_input_files to work_dir on supercomputer
-        # using client.put_file().
         for transfer_file in self.transfer_input_files:
-            client.put_file(transfer_file, self.work_dir)
+            transfer_file_name = os.path.split(transfer_file)[-1]
+            remote_path = os.path.join(self.work_dir, transfer_file_name)
+            ret = self.invoke_on_client('put_file', local_path=transfer_file, remote_path=remote_path)
+
+            if 'success' in ret and ret['success'] == 'false':
+                self._status = 'ERR'
+                self.save()
+                raise RuntimeError('An exception occurred while transferring input files: {}'.format(ret['error']))
 
         # Transfer the job_script to the work_dir on supercomputer
-        # using client.put_file().
         if self.transfer_job_script:
-            client.put_file(self.job_script, self.work_dir)
+            remote_path = os.path.join(self.work_dir, self.job_script_name)
+            ret = self.invoke_on_client('put_file', local_path=self.job_script, remote_path=remote_path)
+
+            if 'success' in ret and ret['success'] == 'false':
+                self._status = 'ERR'
+                self.save()
+                raise RuntimeError('An exception occurred while transferring the job script: {}'.format(ret['error']))
 
         # Generate PbsScript object using generate_pbs_script().
         pbs_script = self.generate_pbs_script()
 
-        # Submit job using client.submit() with PbsScript object and remote workspace
+        # Submit job with PbsScript object and remote workspace
         job_id = client.submit(pbs_script, self.work_dir)
 
         # Save job id to job_id
         self.job_id = job_id
         self.save()
 
-    def _update_status(self, token):
-        # Get client using get_client() method
-        client = self.get_client(token=token)
+    def _parse_status(self, status_string):
+        """
+        Parse status string returned from qstat command.
 
+        Args:
+            status_string(str): stdout from qstat command.
+
+        Returns:
+            str: TethysJob status string.
+        """
+        # EXAMPLE:
+        # Job id    Name    User    Time    Use S   Queue
+        # --------  -----   ------- ------  --- -   ------
+        # 2924080.topaz10   rdp nswain  00:11:59    R   debug
+        try:
+            lines = status_string.split('\n')
+            status_line = lines[2]
+            cols = status_line.split()
+            status = cols[4].strip()
+            return self.UIT_TO_TETHYS_STATUSES[status]
+
+        except (IndexError,):
+            return 'ERR'
+
+    def _update_status(self):
+        # Get status using qstat.
         pbs_command = 'qstat ' + self.job_id
-        # Get status using client.call() either qstat/qview (which ever is easier to parse).
-        qstat_ret = client.call(command=pbs_command, work_dir=self.work_dir)
+        ret = self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
 
-        # TODO: Need to see the return string from qstat to get out the status.
-        # Parse out value
-        status = UIT_to_TETHYS_STATUSES[qstat_ret]
+        if ret['success'] == 'true':
+            status = self._parse_status(ret['stdout'])
+        else:
+            status = 'ERR'
 
-        self._update_status = status
+        self._status = status
         self.save()
 
     def _process_results(self, token):
         # Get client using get_client() method
-        client = self.get_client(token=token)
+        client = self.client
         # path to store transfer output files
         transfer_output_files_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uit_plus_job',
                                                   'transfer_output_files')
@@ -228,62 +338,56 @@ class UitPlusJob(TethysJob):
                 os.makedirs(job_transfer_output_files)
 
         # Get transfer_output_files from work_dir
-        work_directory_json_response = client.list_dir(self.work_dir)
+        work_directory_json_response = self.invoke_on_client('list_dir', path=self.work_dir)
         if work_directory_json_response:
-            self.get_remote_file(client=client,
-                                 remote_files_path=self.transfer_output_files,
+            self.get_remote_file(remote_files_path=self.transfer_output_files,
                                  local_path=job_transfer_output_files)
         else:
             # Get transfer_output_files from home_dir when work_dir doesn't exist
-            home_directory_json_response = client.list_dir(self.home_dir)
+            home_directory_json_response = self.invoke_on_client('list_dir', path=self.home_dir)
             if home_directory_json_response:
-                self.get_remote_file(client=client,
-                                     remote_files_path=self.transfer_output_files,
+                self.get_remote_file(remote_files_path=self.transfer_output_files,
                                      local_path=job_transfer_output_files)
 
-    def get_remote_file(self, client, remote_files_path, local_path):
+    def get_remote_file(self, remote_files_path, local_path):
         for remote_file_path in remote_files_path:
-            client.get_file(remote_file_path, local_path)
+            ret = self.invoke_on_client('get_file', remote_path=remote_file_path, local_path=local_path)
 
-    def stop(self, token):
-        # Get client using get_client() method
-        client = self.get_client(token=token)
+        return ret['success'] == 'true'
+
+    def stop(self):
+        # delete the job
         pbs_command = 'qdel ' + self.job_id
-        # delete the job
-        client.call(command=pbs_command, work_dir=self.work_dir)
+        self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
 
-    def pause(self, token):
-        # Get client using get_client() method
-        client = self.get_client(token=token)
+    def pause(self):
+        # hold the job
         pbs_command = 'qhold ' + self.job_id
-        # delete the job
-        client.call(command=pbs_command, work_dir=self.work_dir)
+        self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
 
-    def resume(self, token):
-        # Get client using get_client() method
-        client = self.get_client(token=token)
+    def resume(self):
+        # resume the job
         pbs_command = 'qrls ' + self.job_id
-        # delete the job
-        client.call(command=pbs_command, work_dir=self.work_dir)
+        self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
 
-    def clean(self, token, archive):
-        # Get client using get_client() method
-        client = self.get_client(token=token)
+    def clean(self, archive=False):
+        # Get client
+        client = self.client
 
+        # clean the job directories
         pbs_clean_script = self.render_clean_block(archive)
-
         client.submit(pbs_clean_script, self.work_dir)
 
     def render_clean_block(self, archive=False):
-        max_job_duration = str(self.max_time)
+        cleanup_walltime = strfdelta(self.max_cleanup_time, '%H:%M:%S')
+
         context = {
-            'WORKDIR': self.work_dir,
-            'JOBID': self.job_id,
-            'Project_ID': self.project_id,
-            'ARCHIVE_HOME': self.archive_dir,
-            'HOME': self.home_dir,
-            'walltime': max_job_duration,
+            'job_work_dir': self.work_dir,
+            'project_id': self.project_id,
+            'job_archive_dir': self.archive_dir,
+            'job_home_dir': self.home_dir,
             'archive': archive,
+            'cleanup_walltime': cleanup_walltime,
         }
 
         bash_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uit_plus_job', 'resources')

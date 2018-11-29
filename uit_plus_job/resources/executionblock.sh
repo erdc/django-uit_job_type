@@ -29,7 +29,7 @@ cd {{ job_work_dir }}
 rm -f cleanup_job || true
 cat >cleanup_job <<END
 #!/bin/bash
-#PBS -l walltime=12:00:00
+#PBS -l walltime={{ cleanup_walltime }}
 #PBS -q transfer
 #PBS -A {{ project_id }}
 #PBS -l select=1:ncpus=1

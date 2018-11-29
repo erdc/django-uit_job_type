@@ -82,7 +82,7 @@ class TestUitPlusJob(TestCase):
         self.assertRaises(ValidationError, self.uitplusjob.clean_fields)
 
     def test_remote_workspace_prop(self):
-        remote_workspace = self.uitplusjob.remote_workspace
+        remote_workspace = self.uitplusjob.remote_workspace_suffix
         self.assertIn('test_label/uit_job', remote_workspace)
 
     def test_job_work_dir_prop(self):
