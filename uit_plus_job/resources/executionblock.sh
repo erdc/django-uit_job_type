@@ -1,88 +1,82 @@
 ## Execution Block ----------------------------------------
 # Environment Setup
 
-# cd to your scratch directory in /work
-if [ ! -d ${{WORKDIR}} ]; then
-  mkdir -p ${{WORKDIR}}
+# make and cd to your job working directory
+if [ ! -d {{ job_work_dir }} ]; then
+  mkdir -p {{ job_work_dir }}
 fi
-cd ${{WORKDIR}}
+cd {{ job_work_dir }}
 
-# create a job-specific subdirectory based on JOBID and cd to it
-if [ ! -d {{JOBID}} ]; then
-  mkdir -p {{JOBID}}
-fi
-cd {{JOBID}}
-
-{% if archive_input_files %}
 # stage input data from archive
 {% for archive_input_file in archive_input_files %}
-archive get -C {{ARCHIVE_HOME}}/{{archive_input_file}} "*.*"
+archive get -C ${ARCHIVE_HOME}/{{ archive_input_file }}
 {% endfor %}
-{% endif %}
 
-{% if home_input_files %}
 # stage input data from home
 {% for home_input_file in home_input_files %}
-archive get -C {{HOME}}/{{home_input_file}} "*.*"
+cp ${HOME}/{{ home_input_file }} .
 {% endfor %}
-{% endif %}
-
-# copy the executable from $HOME
-cp {{HOME}}/{{executable}} .
 
 ## Launching ----------------------------------------------
-{{executable}}
-
+chmod +x {{ executable }}
+./{{ executable }}
 
 ## Cleanup ------------------------------------------------
 # archive your results
 # Using the "here document" syntax, create a job script
 # for archiving your data.
-cd {{WORKDIR}}
-rm -f archive_job
-cat >archive_job <<END
+cd {{ job_work_dir }}
+rm -f cleanup_job || true
+cat >cleanup_job <<END
 #!/bin/bash
-#PBS -l walltime={{walltime}}
+#PBS -l walltime=12:00:00
 #PBS -q transfer
-#PBS -A {{Project_ID}}
+#PBS -A {{ project_id }}
 #PBS -l select=1:ncpus=1
 #PBS -j oe
 #PBS -S /bin/bash
-cd {{WORKDIR}}/{{JOBID}}
+cd {{ job_work_dir }}
 
+{# ARCHIVE OUTPUT FILES #}
 {% if archive_output_files %}
 # make dir
-archive mkdir -C {{ARCHIVE_HOME}} {{JOBID}}
+archive mkdir -p {{ job_archive_dir }}
+
 # transfer the archive_output_files to archive home
 {% for archive_output_file in archive_output_files %}
-archive mv {{archive_output_file}} {{ARCHIVE_HOME}}/{{JOBID}}
+archive put -C {{ job_archive_dir }} {{ archive_output_file }}
 {% endfor %}
+
 # list all the archive_output_files
-archive ls {{ARCHIVE_HOME}}/{{JOBID}}
+archive ls {{ job_archive_dir }}
 {% endif %}
 
-{% if home_output_files or transfer_output_files %}
-# make dir
-archive mkdir -C {{HOME}} {{JOBID}}
+{# HOME OUTPUT FILES #}
 {% if home_output_files%}
+# make dir
+mkdir -p {{ job_home_dir }}
+
 # transfer the home_output_files to home
 {% for home_output_file in home_output_files %}
-archive mv {{home_output_file}} {{HOME}}/{{JOBID}}
+cp {{ home_output_file }} {{ job_home_dir }}
 {% endfor %}
 {% endif %}
+
+{# TRANSFER OUTPUT FILES #}
 {% if transfer_output_files%}
+# make transfer directory in job home
+mkdir -p {{ job_home_dir }}/transfer
+
 # transfer the transfer_output_files to home
 {% for transfer_output_file in transfer_output_files %}
-archive mv {{transfer_output_file}} {{HOME}}/{{JOBID}}
+cp {{ transfer_output_file }} {{ job_home_dir }}/transfer
 {% endfor %}
-{% endif %}
 {% endif %}
 
 # Remove scratch directory from the file system.
-cd {{WORKDIR}}
-#rm -rf {{JOBID}}
+cd ${WORKDIR}
+rm -rf {{ job_work_dir }}
 END
 
-# Submit the archive job script.
-qsub archive_job
-
+# Submit the cleanup job script.
+qsub cleanup_job

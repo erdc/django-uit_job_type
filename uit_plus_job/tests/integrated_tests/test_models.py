@@ -86,15 +86,15 @@ class TestUitPlusJob(TestCase):
         self.assertIn('test_label/uit_job', remote_workspace)
 
     def test_job_work_dir_prop(self):
-        work_dir = self.uitplusjob.job_work_dir
+        work_dir = self.uitplusjob.work_dir
         self.assertIn('${WORKDIR}/test_label/uit_job', work_dir)
 
     def test_job_archive_dir_prop(self):
-        archive_dir = self.uitplusjob.job_archive_dir
+        archive_dir = self.uitplusjob.archive_dir
         self.assertIn('${ARCHIVE_HOME}/test_label/uit_job', archive_dir)
 
     def test_job_home_dir_prop(self):
-        home_dir = self.uitplusjob.job_home_dir
+        home_dir = self.uitplusjob.home_dir
         self.assertIn('${HOME}/test_label/uit_job', home_dir)
 
     @mock.patch('uit_plus_job.models.Client')

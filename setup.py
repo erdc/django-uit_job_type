@@ -2,7 +2,10 @@ from setuptools import setup, find_packages
 
 
 # -- Python Dependencies -- #
-dependencies = []
+dependencies = [
+    'django_picklefield',
+    'uit',
+]
 
 setup(
     name='uit_plus_job',
