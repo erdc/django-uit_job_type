@@ -2,6 +2,7 @@
 import os
 import uuid
 import types
+import inspect
 import datetime as dt
 from django.db import models
 from picklefield import PickledObjectField
@@ -12,7 +13,7 @@ from tethys_compute.models.tethys_job import TethysJob
 from uit_plus_job.util import strfdelta
 
 
-class UitPlusJob(TethysJob):
+class UitPlusJob(PbsScript, TethysJob):
     """
     UIT+ Job type.
     """
@@ -63,6 +64,41 @@ class UitPlusJob(TethysJob):
     _optional_directives = PickledObjectField(default=list)
     _remote_workspace_id = models.CharField(max_length=64, default=str(uuid.uuid4()))
     _remote_workspace = models.TextField(blank=True)
+
+    def __init__(self, *args, **kwargs):
+        """
+        constructor
+        """
+        # Build kwargs for PbsScript constructor
+        pbs_kwargs = {}
+
+        # Get arguments of PbsScript constructor dynamically
+        pbs_signature = inspect.signature(PbsScript.__init__)
+
+        # Get list of fields
+        upj_fields = UitPlusJob._meta.get_fields()
+
+        # Handle case when Django models are instantiated manually with kwargs
+        if kwargs:
+            for param in pbs_signature.parameters.keys():
+                if param != 'self':
+                    pbs_kwargs[param] = kwargs.get(param, None)
+
+        # When a Django model loads objects from the database, it passes in args, not kwargs
+        if len(args) == len(upj_fields):
+            # Get list of field names in the order Django passes them in
+            all_field_names = []
+            for field in upj_fields:
+                all_field_names.append(field.name)
+
+            # Match up given arg values with field names
+            for field_name, value in zip(all_field_names, args):
+                if field_name in pbs_signature.parameters:
+                    pbs_kwargs[field_name] = value
+
+        PbsScript.__init__(self, **pbs_kwargs)
+
+        TethysJob.__init__(self, *args, **kwargs)
 
 
     @property
@@ -170,30 +206,6 @@ class UitPlusJob(TethysJob):
         ret = self.invoke_on_client('call', command=command, work_dir='/tmp')
         return ret.strip()
 
-    def set_directive(self, directive, value):
-        # Save the result
-        self._optional_directives.append(PbsDirective(directive, value))
-
-    def get_directive(self, directive):
-        for d in self._optional_directives:
-            if d.directive == directive:
-                return d.options
-
-    def get_directives(self):
-        return self._optional_directives
-
-    def load_module(self, module):
-        self._modules.update({module: "load"})
-
-    def unload_module(self, module):
-        self._modules.update({module: "unload"})
-
-    def swap_module(self, module1, module2):
-        self._modules.update({module1: module2})
-
-    def get_modules(self):
-        return self._modules
-
     def render_execution_block(self):
         cleanup_walltime = strfdelta(self.max_cleanup_time, '%H:%M:%S')
 
@@ -220,27 +232,6 @@ class UitPlusJob(TethysJob):
             execution_block = template.render(context)
 
         return execution_block
-
-    def generate_pbs_script(self):
-        # Create a new PbsScript
-        pbs_script = PbsScript(job_name=self.name, project_id=self.project_id, num_nodes=self.num_nodes,
-                               processes_per_node=self.processes_per_node, max_time=self.max_time)
-
-        # Iterate through UitPlusJob.get_directives()
-        # add to PbsScript instance one at a time using PbsScript.set_directive().
-        directives = self.get_directives()
-        for i in range(len(directives)):
-            pbs_script.set_directive(directives[i].directive, directives[i].options)
-
-        # Iterate through UitPlusJob.get_modules()
-        # and add to PbsScript instance one at at time using appropriate module method.
-        modules = self.get_modules()
-        pbs_script._modules = modules
-
-        # Assign PbsScript.execution_block from UitPlusJob.render_execution_block()
-        pbs_script.execution_block = self.render_execution_block()
-
-        return pbs_script
 
     def _execute(self):
         # Get client
@@ -274,11 +265,11 @@ class UitPlusJob(TethysJob):
                 self.save()
                 raise RuntimeError('An exception occurred while transferring the job script: {}'.format(ret['error']))
 
-        # Generate PbsScript object using generate_pbs_script().
-        pbs_script = self.generate_pbs_script()
+        # Set the execution block
+        self.execution_block = self.render_execution_block()
 
         # Submit job with PbsScript object and remote workspace
-        job_id = client.submit(pbs_script, self.work_dir)
+        job_id = client.submit(self, self.work_dir)
 
         # Save job id to job_id
         self.job_id = job_id
@@ -358,17 +349,20 @@ class UitPlusJob(TethysJob):
     def stop(self):
         # delete the job
         pbs_command = 'qdel ' + self.job_id
-        self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
+        ret = self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
+        # TODO: CHECK SUCCESS
 
     def pause(self):
         # hold the job
         pbs_command = 'qhold ' + self.job_id
-        self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
+        ret = self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
+        # TODO: CHECK SUCCESS
 
     def resume(self):
         # resume the job
         pbs_command = 'qrls ' + self.job_id
-        self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
+        ret = self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
+        # TODO: CHECK SUCCESS
 
     def clean(self, archive=False):
         # Get client
