@@ -161,38 +161,6 @@ class UitPlusJob(PbsScript, TethysJob):
         # return the client
         return self._client
 
-    def invoke_on_client(self, method, retries=3, **kwargs):
-        """
-        Robust wrapper around client methods. Will retry, reties times if failed due to DP routing error.
-        """
-        # Validate method is method on client
-        attempts = 1
-        client_method = getattr(self.client, method, None)
-
-        if not client_method or not isinstance(client_method, types.MethodType):
-            raise ValueError('{} is not a valid method of UIT Client.')
-
-        last_exception = None
-
-        while attempts <= retries:
-            try:
-                ret = client_method(**kwargs)
-                return ret
-            except RuntimeError as e:
-                # "DP Route error" indicates failure of SSH Tunnel client on UIT Plus server.
-                # Successive calls should work.
-                if 'DP Route error' in str(e):
-                    attempts += 1
-                    last_exception = e
-                    continue
-                else:
-                    # Raise other Runtime Errors
-                    raise
-
-        kwarg_str = ', '.join(['{}="{}"'.format(k, v) for k, v in kwargs.items()])
-        raise RuntimeError('Max number of retries reached without success for '
-                           'method: {}({}). Last exception encountered: {}'.format(method, kwarg_str, last_exception))
-
     def get_environment_variable(self, variable):
         """
         Get the value of an environment variable.
@@ -203,7 +171,7 @@ class UitPlusJob(PbsScript, TethysJob):
             str: value of environment variable.
         """
         command = 'echo ${}'.format(variable)
-        ret = self.invoke_on_client('call', command=command, work_dir='/tmp')
+        ret = self.client.call(command=command, work_dir='/tmp')
         return ret.strip()
 
     def render_execution_block(self):
@@ -239,16 +207,19 @@ class UitPlusJob(PbsScript, TethysJob):
 
         # Setup working directory on supercomputer
         command = 'mkdir -p ' + self.work_dir
-        ret = self.invoke_on_client(method='call', command=command, work_dir='/tmp')
-
-        # if not ret:
-        #     raise RuntimeError('An error occurred while setting up job directory on {}'.format(self.system))
+        try:
+            self.client.call(command=command, work_dir='/tmp')
+        except RuntimeError as e:
+            self._status = 'ERR'
+            self.save()
+            raise RuntimeError('An error occurred while setting up job directory '
+                               'on "{}": {}'.format(self.system, str(e)))
 
         # Transfer any files listed in transfer_input_files to work_dir on supercomputer
         for transfer_file in self.transfer_input_files:
             transfer_file_name = os.path.split(transfer_file)[-1]
             remote_path = os.path.join(self.work_dir, transfer_file_name)
-            ret = self.invoke_on_client('put_file', local_path=transfer_file, remote_path=remote_path)
+            ret = self.client.put_file(local_path=transfer_file, remote_path=remote_path)
 
             if 'success' in ret and ret['success'] == 'false':
                 self._status = 'ERR'
@@ -258,7 +229,7 @@ class UitPlusJob(PbsScript, TethysJob):
         # Transfer the job_script to the work_dir on supercomputer
         if self.transfer_job_script:
             remote_path = os.path.join(self.work_dir, self.job_script_name)
-            ret = self.invoke_on_client('put_file', local_path=self.job_script, remote_path=remote_path)
+            ret = self.client.put_file(local_path=self.job_script, remote_path=remote_path)
 
             if 'success' in ret and ret['success'] == 'false':
                 self._status = 'ERR'
@@ -296,20 +267,18 @@ class UitPlusJob(PbsScript, TethysJob):
             status = cols[4].strip()
             return self.UIT_TO_TETHYS_STATUSES[status]
 
-        except (IndexError,):
+        except (IndexError, AttributeError):
             return 'ERR'
 
     def _update_status(self):
-        # Get status using qstat.
-        pbs_command = 'qstat ' + self.job_id
-        ret = self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
+        # Get status using qstat with -H option to get historical data when job finishes.
+        pbs_command = 'qstat -H ' + self.job_id
+        try:
+            status_string = self.client.call(command=pbs_command, work_dir=self.work_dir)
+        except RuntimeError:
+            return
 
-        if ret['success'] == 'true':
-            status = self._parse_status(ret['stdout'])
-        else:
-            status = 'ERR'
-
-        self._status = status
+        self._status = self._parse_status(status_string)
         self.save()
 
     def _process_results(self, token):
@@ -329,50 +298,63 @@ class UitPlusJob(PbsScript, TethysJob):
                 os.makedirs(job_transfer_output_files)
 
         # Get transfer_output_files from work_dir
-        work_directory_json_response = self.invoke_on_client('list_dir', path=self.work_dir)
+        work_directory_json_response = self.client.list_dir(path=self.work_dir)
         if work_directory_json_response:
             self.get_remote_file(remote_files_path=self.transfer_output_files,
                                  local_path=job_transfer_output_files)
         else:
             # Get transfer_output_files from home_dir when work_dir doesn't exist
-            home_directory_json_response = self.invoke_on_client('list_dir', path=self.home_dir)
+            home_directory_json_response = self.client.list_dir(path=self.home_dir)
             if home_directory_json_response:
                 self.get_remote_file(remote_files_path=self.transfer_output_files,
                                      local_path=job_transfer_output_files)
 
     def get_remote_file(self, remote_files_path, local_path):
         for remote_file_path in remote_files_path:
-            ret = self.invoke_on_client('get_file', remote_path=remote_file_path, local_path=local_path)
-
+            ret = self.client.get_file(remote_path=remote_file_path, local_path=local_path)
         return ret['success'] == 'true'
 
     def stop(self):
         # delete the job
         pbs_command = 'qdel ' + self.job_id
-        ret = self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
-        # TODO: CHECK SUCCESS
+        try:
+            ret = self.client.call(command=pbs_command, work_dir=self.work_dir)
+            return True
+        except RuntimeError:
+            return False
 
     def pause(self):
         # hold the job
         pbs_command = 'qhold ' + self.job_id
-        ret = self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
-        # TODO: CHECK SUCCESS
+        try:
+            ret = self.client.call(command=pbs_command, work_dir=self.work_dir)
+            return True
+        except RuntimeError:
+            return False
 
     def resume(self):
         # resume the job
         pbs_command = 'qrls ' + self.job_id
-        ret = self.invoke_on_client(method='call', command=pbs_command, work_dir=self.work_dir)
-        # TODO: CHECK SUCCESS
+        try:
+            ret = self.client.call(command=pbs_command, work_dir=self.work_dir)
+            return True
+        except RuntimeError:
+            return False
 
     def clean(self, archive=False):
         # Get client
         client = self.client
 
         # clean the job directories
-        pbs_clean_script = self.render_clean_block(archive)
-        client.submit(pbs_clean_script, self.work_dir)
+        pbs_clean_script = self.render_clean_script(archive)
+        try:
+            # TODO: Refactor to remove home and work dir using client.call() Change cleanblock.sh to only remove the archive directory. Only submit if archive is True
+            ret = client.submit(pbs_clean_script, self.work_dir, remote_name='clean.pbs')
+            return True
+        except RuntimeError:
+            return False
 
-    def render_clean_block(self, archive=False):
+    def render_clean_script(self, archive=False):
         cleanup_walltime = strfdelta(self.max_cleanup_time, '%H:%M:%S')
 
         context = {

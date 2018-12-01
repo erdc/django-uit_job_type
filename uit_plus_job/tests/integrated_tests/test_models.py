@@ -262,7 +262,7 @@ class TestUitPlusJob(TestCase):
         self.assertIn('${WORKDIR}/test_label/uit_job/', call_args[0][1]['work_dir'])
         self.assertIn('qrls J0001', call_args[0][1]['command'])
 
-    @mock.patch('uit_plus_job.models.UitPlusJob.render_clean_block')
+    @mock.patch('uit_plus_job.models.UitPlusJob.render_clean_script')
     @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
     def test_clean(self, mock_client, mock_pbs):
         mock_client_return = mock.MagicMock()
@@ -278,7 +278,7 @@ class TestUitPlusJob(TestCase):
 
     def test_render_clean_block(self):
         # call the method
-        res = self.uitplusjob.render_clean_block()
+        res = self.uitplusjob.render_clean_script()
 
         # test the results
         self.assertIn('cd ${WORKDIR}/test_label/uit_job/', res)

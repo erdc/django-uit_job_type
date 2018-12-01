@@ -1,9 +1,3 @@
-## Cleanup ------------------------------------------------
-# Using the "here document" syntax, create a job script
-# for cleaning up your data.
-cd {{ job_work_dir }}
-rm -f clean_job
-cat >clean_job <<END
 #!/bin/bash
 #PBS -l walltime={{ cleanup_walltime }}
 #PBS -q transfer
@@ -13,15 +7,12 @@ cat >clean_job <<END
 #PBS -S /bin/bash
 
 # Remove job_work_dir
-archive rm -rf {{ job_work_dir }}
+rm -rf {{ job_work_dir }} || true
 
 # Remove job_home_dir
-rm -rf {{ job_home_dir }}
+rm -rf {{ job_home_dir }} || true
 
 {% if archive %}
 # Remove job_archive_dir
-rm -rf {{ job_archive_dir }}
+archive rm -rf {{ job_archive_dir }} || true
 {% endif %}
-
-# Submit the archive job script.
-qsub clean_job
