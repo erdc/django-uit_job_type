@@ -1,4 +1,3 @@
-import unittest
 import mock
 from uit_plus_job.models import UitPlusJob
 from django.contrib.auth.models import User
@@ -16,17 +15,21 @@ class TestUitPlusJob(TestCase):
         self.user = User.objects.create_user('tethys1', 'user@example.com', 'pass')
 
         self.uitplusjob = UitPlusJob(
-            name='test_tethysjob',
-            description='test_description',
+            name='uit_job',
             user=self.user,
+            description='test_description',
             label='test_label',
-            job_name='uit_job',
+            workspace='test_ws',
+
+            node_type='compute',
+            system='topaz',
+
+            job_id='J0001',
             project_id='P001',
             num_nodes=10,
             processes_per_node=5,
             max_time=timedelta(hours=10, seconds=42),
-            _optional_directives=[('J', 'OpenMP')],
-            _modules={'OpenGL': 'load'},
+            max_cleanup_time=timedelta(hours=10, seconds=60),
             job_script='PBSScript',
             transfer_input_files=['file1.xml', 'file10.xml'],
             archive_input_files=['file2.xml', 'file3.txt'],
@@ -34,8 +37,7 @@ class TestUitPlusJob(TestCase):
             transfer_output_files=['transfer_out.out', 'transfer_out2.out'],
             archive_output_files=['archive_out.out', 'archive_out2.out'],
             home_output_files=['home.out', 'test_home.out'],
-            job_id='J0001',
-            workspace='test_ws')
+            _modules={'OpenGL': 'load'})
 
         self.uitplusjob.save()
 
@@ -44,10 +46,10 @@ class TestUitPlusJob(TestCase):
         self.user.delete()
 
     def test_init(self):
-        self.assertEqual('test_tethysjob', self.uitplusjob.name)
+        self.assertEqual('uit_job', self.uitplusjob.name)
         self.assertEqual('test_description', self.uitplusjob.description)
         self.assertEqual('test_label', self.uitplusjob.label)
-        self.assertEqual('uit_job', self.uitplusjob.job_name)
+        self.assertEqual('uit_job', self.uitplusjob.name)
         self.assertEqual('P001', self.uitplusjob.project_id)
         self.assertEqual(10, self.uitplusjob.num_nodes)
         self.assertEqual(5, self.uitplusjob.processes_per_node)
@@ -56,6 +58,52 @@ class TestUitPlusJob(TestCase):
         self.assertEqual('compute', self.uitplusjob.node_type)
         self.assertEqual('topaz', self.uitplusjob.system)
         self.assertTrue(self.uitplusjob.transfer_job_script)
+
+    def test_init_args(self):
+        import datetime
+        # import pdb
+        # pdb.set_trace()
+        self.uitplusjob_args = UitPlusJob(
+            100,
+            'uit_job',
+            'test_description',
+            self.user,
+            'test_label',
+            datetime.datetime(2018, 1, 1),
+            datetime.datetime(2018, 1, 1),
+            datetime.datetime(2018, 1, 1),
+            datetime.datetime(2018, 1, 1),
+            'test_ws',
+            {},
+            'test2',
+            'R',
+            'test3',
+            'J0001',
+            'P001',
+            'topaz',
+            'compute',
+            10,
+            5,
+            timedelta(hours=10, seconds=42),
+            timedelta(hours=10, seconds=60),
+            'debug',
+            'PBSScript',
+            'PBSScript',
+            ['file1.xml', 'file10.xml'],
+            ['file2.xml', 'file3.txt'],
+            ['file3.xml', 'file4.xml'],
+            ['transfer_out.out', 'transfer_out2.out'],
+            ['archive_out.out', 'archive_out2.out'],
+            ['home.out', 'test_home.out'],
+            {'OpenGL': 'load'},
+            '-j',
+            '12345',
+            'workspace')
+
+        # TODO: Ask Nathan
+        # self.uitplusjob_args.save()
+
+        self.assertEqual('uit_job', self.uitplusjob_args.name)
 
     def test_node_type(self):
         self.uitplusjob.node_type = 'compute'
@@ -81,230 +129,368 @@ class TestUitPlusJob(TestCase):
         # Field Validation
         self.assertRaises(ValidationError, self.uitplusjob.clean_fields)
 
-    def test_remote_workspace_prop(self):
+    def test_job_script_name_prop(self):
+        job_script_name = self.uitplusjob.job_script_name
+        self.assertEqual('PBSScript', job_script_name)
+
+    def test_job_script_name_prop_attribute_error(self):
+        self.uitplusjob.job_script = None
+        ret = self.uitplusjob.job_script_name
+        self.assertEqual('', ret)
+
+    def test_token(self):
+        pass
+        # # TODO: Nathan: How to mock the user.social_auth.get
+        # self.user.social_auth = mock.MagicMock()
+        # self.user.social_auth.get.return_value = 'test_token'
+        # self.uitplusjob.user = self.user
+        # ret_token = self.uitplusjob.token
+        # self.user.social_auth.get.assert_called_once_with(provider='UITPlus')
+        # self.assertEqual('test_token', ret_token)
+
+    def test_remote_workspace_suffix_prop(self):
         remote_workspace = self.uitplusjob.remote_workspace_suffix
         self.assertIn('test_label/uit_job', remote_workspace)
 
-    def test_job_work_dir_prop(self):
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_environment_variable')
+    def test_work_dir_prop(self, mock_env_work_dir):
+        mock_env_work_dir.return_value = '{WORK_DIR}'
+
+        # calling the property
         work_dir = self.uitplusjob.work_dir
-        self.assertIn('${WORKDIR}/test_label/uit_job', work_dir)
 
-    def test_job_archive_dir_prop(self):
+        # test the results
+        mock_env_work_dir.assert_called_with('WORKDIR')
+        self.assertIn('{WORK_DIR}/test_label/uit_job/', work_dir)
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_environment_variable')
+    def test_archive_dir_prop(self, mock_env_arc_dir):
+        mock_env_arc_dir.return_value = '{ARCH_DIR}'
         archive_dir = self.uitplusjob.archive_dir
-        self.assertIn('${ARCHIVE_HOME}/test_label/uit_job', archive_dir)
+        mock_env_arc_dir.assert_called_with('ARCHIVE_HOME')
+        self.assertIn('{ARCH_DIR}/test_label/uit_job', archive_dir)
 
-    def test_job_home_dir_prop(self):
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_environment_variable')
+    def test_home_dir_prop(self, mock_env_home_dir):
+        mock_env_home_dir.return_value = '{HOME_DIR}'
         home_dir = self.uitplusjob.home_dir
-        self.assertIn('${HOME}/test_label/uit_job', home_dir)
+        mock_env_home_dir.assert_called_with('HOME')
+        self.assertIn('{HOME_DIR}/test_label/uit_job', home_dir)
 
     @mock.patch('uit_plus_job.models.Client')
-    def test_get_client(self, mock_client):
+    @mock.patch('uit_plus_job.models.UitPlusJob.token')
+    def test_client_prop(self, mock_token, mock_client):
         mock_client_ret = mock.MagicMock()
         mock_client.return_value = mock_client_ret
 
         # Execute
-        ret = self.uitplusjob.get_client(token='test_token')
+        ret = self.uitplusjob.client
 
         # check return value
         self.assertEqual(mock_client_ret, ret)
 
         # check assert call
-        mock_client.assert_called_with(token='test_token')
-        mock_client_ret.connect.assert_called()
+        mock_client.assert_called_with(token=mock_token)
+        mock_client_ret.connect.assert_called_with(system='topaz')
 
-    def test_set_directive(self):
-        # Call the method
-        self.uitplusjob.set_directive('M', 'OpenGL')
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    def test_get_environment_variable(self, mock_client):
+        mock_client.call.return_value = "test_return"
 
-        # Get the _directives
-        ret = self.uitplusjob.get_directive('-M')
-
-        # Test the results
-        self.assertEqual('OpenGL', ret)
-
-    def test_get_directive(self):
-        # Call the method
-        res = self.uitplusjob.get_directive('-J')
-
-        # Test the result
-        self.assertEqual('OpenMP', res)
-
-    def test_get_directives(self):
-        # Call the method
-        res = self.uitplusjob.get_directives()
-
-        # Test the result
-        self.assertEqual('OpenMP', res[0].options)
-
-    def test_load_module(self):
-        # load anaconda module
-        self.uitplusjob.load_module('anaconda')
-
-        # get all the modules
-        ret = self.uitplusjob.get_modules()
-
-        self.assertEqual('load', ret['anaconda'])
-
-    def test_unload_module(self):
-        # load anaconda module
-        self.uitplusjob.unload_module('C++')
-
-        # get all the modules
-        ret = self.uitplusjob.get_modules()
-
-        self.assertEqual('unload', ret['C++'])
-
-    def test_swap_module(self):
-        # load modules
-        self.uitplusjob.swap_module('OpenMP', 'C++')
-
-        # get all the modules
-        ret = self.uitplusjob.get_modules()
-
-        self.assertEqual('C++', ret['OpenMP'])
-
-    def test_render_execution_block(self):
-        ret = self.uitplusjob.render_execution_block()
-        self.assertIn('mkdir -p $${WORKDIR}/test_label/uit_job', ret)
-        self.assertIn('mkdir -p J0001', ret)
-        self.assertIn('archive get -C ${ARCHIVE_HOME}/test_label/uit_job', ret)
-        self.assertIn('archive get -C ${HOME}/test_label/uit_job/', ret)
-        self.assertIn('PBSScript', ret)
-        self.assertIn('cd ${WORKDIR}/test_label/uit_job', ret)
-        self.assertIn('#PBS -l walltime=10:00:42', ret)
-        self.assertIn('archive mv archive_out2.out ${ARCHIVE_HOME}/test_label/uit_job', ret)
-        self.assertIn('archive mv transfer_out2.out ${HOME}/test_label/uit_job', ret)
-        self.assertIn('#rm -rf J0001', ret)
-
-    def test_generate_pbs_script(self):
-        # set directives and modules
-        self.uitplusjob.set_directive('J', 'OpenMP')
-        self.uitplusjob.set_directive('T', 'OpenGL')
-        self.uitplusjob.load_module('test_load')
-        self.uitplusjob.unload_module('test_unload')
-        self.uitplusjob.swap_module('c++', 'C#')
-
-        # call the method
-        ret = self.uitplusjob.generate_pbs_script()
+        ret = self.uitplusjob.get_environment_variable('WORKDIR')
 
         # test results
-        self.assertIn('#PBS -N uit_job', ret)
-        self.assertIn('#PBS -A P001', ret)
-        self.assertIn('#PBS -l walltime=10:00:42', ret)
-        self.assertIn('#PBS -l select=10:ncpus=36:mpiprocs=5', ret)
-        self.assertIn('#PBS -J OpenMP', ret)
-        self.assertIn('module load test_load', ret)
-        self.assertIn('PBSScript', ret)
+        call_args = mock_client.call.call_args_list
+        self.assertEqual('echo $WORKDIR', call_args[0][1]['command'])
+        self.assertEqual('/tmp', call_args[0][1]['work_dir'])
+        self.assertEqual('test_return', ret)
 
-    @mock.patch('uit_plus_job.models.UitPlusJob.generate_pbs_script')
-    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_environment_variable')
+    def test_render_execution_block(self, mock_get_env):
+        mock_get_env.side_effect = ['{WORKDIR}', '{ARCHIVE_HOME}', '{HOME_DIR}']
+
+        ret = self.uitplusjob.render_execution_block()
+        self.assertIn("mkdir -p {WORKDIR}/test_label/uit_job", ret)
+        self.assertIn('cd {WORKDIR}/test_label/uit_job', ret)
+        self.assertIn('archive get -C ${ARCHIVE_HOME}/file2.xml', ret)
+        self.assertIn('cp ${HOME}/file3.xml .', ret)
+        self.assertIn('cp ${HOME}/file4.xml .', ret)
+        self.assertIn('chmod +x PBSScript', ret)
+        self.assertIn('./PBSScript', ret)
+        self.assertIn('cd {WORKDIR}/test_label/uit_job', ret)
+        self.assertIn('#PBS -l walltime=10:01:00', ret)
+        self.assertIn('#PBS -A P001', ret)
+        self.assertIn('archive mkdir -p {ARCHIVE_HOME}/test_label/uit_job/', ret)
+        self.assertIn('archive put -C {ARCHIVE_HOME}/test_label/uit_job/', ret)
+        self.assertIn('archive ls {ARCHIVE_HOME}/test_label/uit_job', ret)
+        self.assertIn('mkdir -p {HOME_DIR}/test_label/uit_job', ret)
+        self.assertIn('cp home.out {HOME_DIR}/test_label/uit_job', ret)
+        self.assertIn('cp home.out {HOME_DIR}/test_label/uit_job', ret)
+        self.assertIn('cp transfer_out.out {HOME_DIR}/test_label/uit_job', ret)
+        self.assertIn('rm -rf {WORKDIR}/test_label/uit_job', ret)
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_environment_variable')
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
     @mock.patch('django.db.models.base.Model.save')
-    def test__execute(self, mock_save, mock_client, mock_pbs):
-        mock_client_return = mock.MagicMock()
-        mock_client.return_value = mock_client_return
-        mock_pbs.return_value = 'test_pbs_script'
+    def test_execute(self, mock_save, mock_client, mock_env):
+        mock_env.return_value = '{WORKDIR}'
+        mock_client.put_file.side_effect = 'success'
+        mock_client.submit.return_value = 'J001'
 
         # call the method
-        self.uitplusjob._execute('test_token')
-        mock_client_return.submit.return_value = 'test_job_id'
+        self.uitplusjob._execute()
 
         # testing the client call input arguments
-        call_args = mock_client_return.call.call_args_list
-        self.assertIn('mkdir -p test_label/uit_job/', call_args[0][1]['command'])
-        self.assertIn('${WORKDIR}', call_args[0][1]['work_dir'])
+        call_args = mock_client.call.call_args_list
+        self.assertIn('mkdir -p {WORKDIR}/test_label/uit_job', call_args[0][1]['command'])
+        self.assertIn('/tmp', call_args[0][1]['work_dir'])
 
-        # testing the client submit input arguments
-        submit_call_args = mock_client_return.submit.call_args_list
-        self.assertEqual('test_pbs_script', submit_call_args[0][0][0])
-        self.assertIn('${WORKDIR}/test_label/uit_job/', submit_call_args[0][0][1])
+        put_call_args = mock_client.put_file.call_args_list
+        self.assertEqual('file1.xml',  put_call_args[0][1]['local_path'])
+        self.assertIn('{WORKDIR}/test_label/uit_job',  put_call_args[0][1]['remote_path'])
+        self.assertEqual('file10.xml',  put_call_args[1][1]['local_path'])
+        self.assertIn('{WORKDIR}/test_label/uit_job',  put_call_args[1][1]['remote_path'])
+        self.assertEqual('PBSScript',  put_call_args[2][1]['local_path'])
+        self.assertIn('{WORKDIR}/test_label/uit_job',  put_call_args[2][1]['remote_path'])
 
-        mock_client_return.put_file.assert_called()
+        submit_call_args = mock_client.submit.call_args_list
+        self.assertIsInstance(submit_call_args[0][0][0], UitPlusJob)
+        self.assertIn('{WORKDIR}/test_label/uit_job/', submit_call_args[0][0][1])
 
-        mock_pbs.assert_called()
-
+        mock_client.put_file.assert_called()
+        self.assertEqual('J001', mock_client.submit())
         mock_save.assert_called()
 
-    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_environment_variable')
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    @mock.patch('django.db.models.base.Model.save')
+    def test_execute_client_call_runtime_error(self, mock_save, mock_client, mock_env):
+        mock_env.return_value = '{WORKDIR}'
+        mock_client.call.side_effect = RuntimeError
+        # call the method
+        self.assertRaises(RuntimeError, self.uitplusjob._execute)
+        mock_save.assert_called()
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_environment_variable')
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    @mock.patch('django.db.models.base.Model.save')
+    def test_execute_transfer_input_file_runtime_error(self, mock_save, mock_client, mock_env):
+        mock_env.return_value = '{WORKDIR}'
+        mock_client.put_file.return_value = {'success': 'false', 'error': 'test error'}
+
+        # call the method
+        self.assertRaises(RuntimeError, self.uitplusjob._execute)
+        mock_save.assert_called()
+
+        # testing the client call input arguments
+        call_args = mock_client.call.call_args_list
+        self.assertIn('mkdir -p {WORKDIR}/test_label/uit_job', call_args[0][1]['command'])
+        self.assertIn('/tmp', call_args[0][1]['work_dir'])
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_environment_variable')
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    @mock.patch('django.db.models.base.Model.save')
+    def test_execute_transfer_script_runtime_error(self, mock_save, mock_client, mock_env):
+        mock_env.return_value = '{WORKDIR}'
+        mock_client.put_file.side_effect = [{'success': 'true'}, {'success': 'true'}, {'success': 'false',
+                                                                                       'error': 'test error'}]
+        # call the method
+        self.assertRaises(RuntimeError, self.uitplusjob._execute)
+        mock_save.assert_called()
+
+        # testing the client call input arguments
+        call_args = mock_client.call.call_args_list
+        self.assertIn('mkdir -p {WORKDIR}/test_label/uit_job', call_args[0][1]['command'])
+        self.assertIn('/tmp', call_args[0][1]['work_dir'])
+
+    def test_parse_status(self):
+        status_string = ' Job id    Name    User    Time    Use S   Queue\n' \
+                        ' --------  -----   ------- ------  --- -   ------\n' \
+                        ' 2924080.topaz10   rdp nswain  00:11:59    R   debug\n'
+
+        ret = self.uitplusjob._parse_status(status_string)
+
+        self.assertEqual('RUN', ret)
+
+    def test_parse_status_index_error(self):
+        ret = self.uitplusjob._parse_status(None)
+
+        self.assertEqual('ERR', ret)
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    def test_get_remote_file(self, mock_client):
+        remote_files_path = ['WORKDIR//file1.xml']
+        local_path = 'Local_work_dir'
+        mock_client.get_file.return_value = {'success': True}
+        ret = self.uitplusjob.get_remote_file(remote_files_path=remote_files_path, local_path=local_path)
+        # test results
+        call_args = mock_client.get_file.call_args
+        self.assertEqual('Local_work_dir', call_args[1]['local_path'])
+        self.assertEqual('WORKDIR//file1.xml', call_args[1]['remote_path'])
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
     def test_stop(self, mock_client):
-        mock_client_return = mock.MagicMock()
-        mock_client.return_value = mock_client_return
         # call the method
-        self.uitplusjob.stop('test_token')
+        self.assertTrue(self.uitplusjob.stop())
 
         # test results
-        call_args = mock_client_return.call.call_args_list
-        self.assertIn('${WORKDIR}/test_label/uit_job/', call_args[0][1]['work_dir'])
-        self.assertIn('qdel J0001', call_args[0][1]['command'])
+        call_args = mock_client.call.call_args_list
+        self.assertDictEqual({'command': 'echo $WORKDIR', 'work_dir': '/tmp'},
+                             call_args[0][1])
+        self.assertEqual('qdel J0001', call_args[1][1]['command'])
 
-    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    def test_stop_runtime_error(self, mock_client):
+        mock_client.call.side_effect = RuntimeError
+
+        # call the method
+        self.assertFalse(self.uitplusjob.stop())
+
+        # test results
+        call_args = mock_client.call.call_args_list
+        self.assertDictEqual({'command': 'echo $WORKDIR', 'work_dir': '/tmp'},
+                             call_args[0][1])
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
     def test_pause(self, mock_client):
-        mock_client_return = mock.MagicMock()
-        mock_client.return_value = mock_client_return
-
         # call the method
-        self.uitplusjob.pause('test_token')
+        self.assertTrue(self.uitplusjob.pause())
 
         # test results
-        call_args = mock_client_return.call.call_args_list
-        self.assertIn('${WORKDIR}/test_label/uit_job/', call_args[0][1]['work_dir'])
-        self.assertIn('qhold J0001', call_args[0][1]['command'])
+        call_args = mock_client.call.call_args_list
+        self.assertDictEqual({'command': 'echo $WORKDIR', 'work_dir': '/tmp'},
+                             call_args[0][1])
+        self.assertEqual('qhold J0001', call_args[1][1]['command'])
 
-    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    def test_pause_runtime_error(self, mock_client):
+        mock_client.call.side_effect = RuntimeError
+
+        # call the method
+        self.assertFalse(self.uitplusjob.pause())
+
+        # test results
+        call_args = mock_client.call.call_args_list
+        self.assertDictEqual({'command': 'echo $WORKDIR', 'work_dir': '/tmp'},
+                             call_args[0][1])
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
     def test_resume(self, mock_client):
-        mock_client_return = mock.MagicMock()
-        mock_client.return_value = mock_client_return
-
         # call the method
-        self.uitplusjob.resume('test_token')
+        self.assertTrue(self.uitplusjob.resume())
 
         # test results
-        call_args = mock_client_return.call.call_args_list
-        self.assertIn('${WORKDIR}/test_label/uit_job/', call_args[0][1]['work_dir'])
-        self.assertIn('qrls J0001', call_args[0][1]['command'])
+        call_args = mock_client.call.call_args_list
+
+        self.assertDictEqual({'command': 'echo $WORKDIR', 'work_dir': '/tmp'},
+                             call_args[0][1])
+        self.assertEqual('qrls J0001', call_args[1][1]['command'])
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    def test_resume_runtime_error(self, mock_client):
+        mock_client.call.side_effect = RuntimeError
+
+        # call the method
+        self.assertFalse(self.uitplusjob.resume())
+
+        # test results
+        call_args = mock_client.call.call_args_list
+
+        self.assertDictEqual({'work_dir': '/tmp', 'command': 'echo $WORKDIR'},
+                             call_args[0][1])
 
     @mock.patch('uit_plus_job.models.UitPlusJob.render_clean_script')
-    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
     def test_clean(self, mock_client, mock_pbs):
-        mock_client_return = mock.MagicMock()
-        mock_client.return_value = mock_client_return
         mock_pbs.return_value = 'test_pbs_render_out'
-
-        self.uitplusjob.clean('test_token', archive=True)
-
-        client_submit_args = mock_client_return.submit.call_args_list
-
+        self.assertTrue(self.uitplusjob.clean(archive=True))
+        client_submit_args = mock_client.submit.call_args_list
         self.assertEqual('test_pbs_render_out', client_submit_args[0][0][0])
-        self.assertIn('${WORKDIR}/test_label/uit_job/', client_submit_args[0][0][1])
+        self.assertDictEqual({'remote_name': 'clean.pbs'},  client_submit_args[0][1])
 
-    def test_render_clean_block(self):
+    @mock.patch('uit_plus_job.models.UitPlusJob.render_clean_script')
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    def test_clean_runtime_error(self, mock_client, mock_pbs):
+        mock_client.submit.side_effect = RuntimeError
+        mock_pbs.return_value = 'test_pbs_render_out'
+        self.assertFalse(self.uitplusjob.clean(archive=True))
+        client_submit_args = mock_client.submit.call_args_list
+        self.assertEqual('test_pbs_render_out', client_submit_args[0][0][0])
+        self.assertDictEqual({'remote_name': 'clean.pbs'}, client_submit_args[0][1])
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_environment_variable')
+    def test_render_clean_script(self, mock_get_env):
+        mock_get_env.side_effect = ['{WORKDIR}', '{ARCHIVE_HOME}', '{HOME_DIR}']
+
         # call the method
         res = self.uitplusjob.render_clean_script()
 
         # test the results
-        self.assertIn('cd ${WORKDIR}/test_label/uit_job/', res)
-        self.assertIn('#PBS -l walltime=10:00:42', res)
+        self.assertIn('#PBS -l walltime=10:01:00', res)
         self.assertIn('#PBS -A P001', res)
-        self.assertIn('archive rm ${WORKDIR}/test_label/uit_job/', res)
-        self.assertIn('archive rm ${HOME}/test_label/uit_job/', res)
+        self.assertIn('rm -rf {WORKDIR}/test_label/uit_job/', res)
+        self.assertIn('rm -rf {HOME_DIR}/test_label/uit_job/', res)
 
-    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
-    def test_process_results(self, mock_client):
-        mock_client_return = mock.MagicMock()
-        mock_client.return_value = mock_client_return
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_remote_file')
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_environment_variable')
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    def test_process_results_from_work_dir(self, mock_client, mock_get_env, mock_remote_file):
+        mock_get_env.side_effect = ['{WORKDIR}', '{HOME_DIR}']
 
-        self.uitplusjob._process_results(token='token')
+        # call the method
+        self.uitplusjob._process_results()
 
+        # test results
+        call_args = mock_remote_file.call_args_list
+        self.assertListEqual(['transfer_out.out', 'transfer_out2.out'], call_args[0][1]['remote_files_path'])
+
+        list_call_args = mock_client.list_dir.call_args_list
+        self.assertIn('{WORKDIR}/test_label/uit_job/', list_call_args[0][1]['path'])
         # TODO: Need to finish this. after we can test on the super computer.
 
-    @mock.patch('uit_plus_job.models.UitPlusJob.get_client')
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_remote_file')
+    @mock.patch('uit_plus_job.models.UitPlusJob.get_environment_variable')
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    def test_process_results_from_home_dir(self, mock_client, mock_get_env, mock_remote_file):
+        mock_get_env.side_effect = ['{WORKDIR}', '{HOME_DIR}']
+
+        mock_client.list_dir.side_effect = [None, mock.MagicMock()]
+
+        # call the method
+        self.uitplusjob._process_results()
+
+        # test results
+        call_args = mock_remote_file.call_args_list
+        self.assertListEqual(['transfer_out.out', 'transfer_out2.out'], call_args[0][1]['remote_files_path'])
+
+        list_call_args = mock_client.list_dir.call_args_list
+        self.assertIn('{WORKDIR}/test_label/uit_job/', list_call_args[0][1]['path'])
+        # TODO: Need to finish this. after we can test on the super computer.
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
     @mock.patch('django.db.models.base.Model.save')
     def test_update_status(self, mock_save, mock_client):
-        mock_client_return = mock.MagicMock()
-        mock_client.return_value = mock_client_return
+        mock_client.call.return_value = ' Job id    Name    User    Time    Use S   Queue \n' \
+                                        ' --------  -----   ------- ------  --- -   ------\n' \
+                                        ' 2924080.topaz10   rdp nswain  00:11:59    R   debug\n'
 
-        self.uitplusjob._update_status(token='token')
+        # call the method
+        self.uitplusjob._update_status()
 
-        # TODO: revist here to add the call_args
-        mock_client_return.call.assert_called()
+        # test results
+        call_args = mock_client.call.call_args_list
+        self.assertDictEqual({'command': 'echo $WORKDIR', 'work_dir': '/tmp'},
+                             call_args[0][1])
+        self.assertEqual('qstat -H J0001', call_args[1][1]['command'])
 
         mock_save.assert_called()
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    def test_update_status_runtime_error(self, mock_client):
+        mock_client.call.side_effect = RuntimeError
+        # call the method
+        self.assertIsNone(self.uitplusjob._update_status())
+        # test results
+        call_args = mock_client.call.call_args_list
+        self.assertDictEqual({'work_dir': '/tmp', 'command': 'echo $WORKDIR'},
+                             call_args[0][1])

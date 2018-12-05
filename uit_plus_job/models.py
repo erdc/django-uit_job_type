@@ -90,7 +90,6 @@ class UitPlusJob(PbsScript, TethysJob):
             all_field_names = []
             for field in upj_fields:
                 all_field_names.append(field.name)
-
             # Match up given arg values with field names
             for field_name, value in zip(all_field_names, args):
                 if field_name in pbs_signature.parameters:
@@ -99,7 +98,6 @@ class UitPlusJob(PbsScript, TethysJob):
         PbsScript.__init__(self, **pbs_kwargs)
 
         TethysJob.__init__(self, *args, **kwargs)
-
 
     @property
     def job_script_name(self):
@@ -281,8 +279,8 @@ class UitPlusJob(PbsScript, TethysJob):
         self._status = self._parse_status(status_string)
         self.save()
 
-    def _process_results(self, token):
-        # Get client using get_client() method
+    def _process_results(self):
+        # Get client using client property
         client = self.client
         # path to store transfer output files
         transfer_output_files_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uit_plus_job',
