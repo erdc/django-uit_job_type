@@ -5,6 +5,7 @@ from datetime import timedelta
 from pytz import timezone
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from social_django.models import UserSocialAuth
 
 
 class TestUitPlusJob(TestCase):
@@ -13,6 +14,8 @@ class TestUitPlusJob(TestCase):
         self.tz = timezone('America/Denver')
 
         self.user = User.objects.create_user('tethys1', 'user@example.com', 'pass')
+
+        self.social_auth = UserSocialAuth.create_social_auth(self.user, 'username', 'UITPlus')
 
         self.uitplusjob = UitPlusJob(
             name='uit_job',
@@ -38,6 +41,7 @@ class TestUitPlusJob(TestCase):
             archive_output_files=['archive_out.out', 'archive_out2.out'],
             home_output_files=['home.out', 'test_home.out'],
             _modules={'OpenGL': 'load'})
+
 
         self.uitplusjob.save()
 
@@ -100,9 +104,6 @@ class TestUitPlusJob(TestCase):
             '12345',
             'workspace')
 
-        # TODO: Ask Nathan
-        # self.uitplusjob_args.save()
-
         self.assertEqual('uit_job', self.uitplusjob_args.name)
 
     def test_node_type(self):
@@ -139,14 +140,20 @@ class TestUitPlusJob(TestCase):
         self.assertEqual('', ret)
 
     def test_token(self):
-        pass
-        # # TODO: Nathan: How to mock the user.social_auth.get
-        # self.user.social_auth = mock.MagicMock()
-        # self.user.social_auth.get.return_value = 'test_token'
-        # self.uitplusjob.user = self.user
-        # ret_token = self.uitplusjob.token
-        # self.user.social_auth.get.assert_called_once_with(provider='UITPlus')
-        # self.assertEqual('test_token', ret_token)
+        mock_social = mock.MagicMock()
+        self.user.social_auth.get = mock_social
+        self.uitplusjob.user = self.user
+
+        self.social_auth.extra_data = {'access_token': 'foo'}
+        self.social_auth.save()
+
+        ret_token = self.uitplusjob.token
+        self.assertEqual('foo', ret_token)
+
+    def test_token_error(self):
+        self.social_auth.extra_data = {}
+        self.social_auth.save()
+        self.assertIsNone(self.uitplusjob.token)
 
     def test_remote_workspace_suffix_prop(self):
         remote_workspace = self.uitplusjob.remote_workspace_suffix
