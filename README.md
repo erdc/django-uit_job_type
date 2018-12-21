@@ -21,7 +21,9 @@
     )
     ```
     
-1. Register a new client on https://www.uitplus.hpc.mil and add the generated client id and client secret to ``settings.py``:
+1. Register a new client on https://www.uitplus.hpc.mil. Set `Return URL` to `http://<yoursite>/oauth2/complete/UITPlus/`.
+
+1. Add the generated client id and client secret to ``settings.py``:
 
     ```python
     SOCIAL_AUTH_UITPLUS_KEY = '<client-id>'
