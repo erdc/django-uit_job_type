@@ -14,6 +14,18 @@ class DeltaTemplate(Template):
 
 
 def strfdelta(tdelta, fmt):
+    """
+    Converts the given duration of delta time into H:M:S format
+    Parameters
+    ----------
+    tdelta: double
+        duration in time delta
+    fmt: str
+        duration type
+    Return
+    -------
+    formatted delta time duration value.
+    """
     d = {}
     hours, rem = divmod(tdelta.total_seconds(), 3600)
     minutes, seconds = divmod(rem, 60)

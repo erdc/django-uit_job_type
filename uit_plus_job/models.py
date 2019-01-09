@@ -62,7 +62,7 @@ class UitPlusJob(PbsScript, TethysJob):
     home_output_files = PickledObjectField(default=list)
     _modules = PickledObjectField(default=dict)
     _optional_directives = PickledObjectField(default=list)
-    _remote_workspace_id = models.CharField(max_length=64, default=str(uuid.uuid4()))
+    _remote_workspace_id = models.CharField(max_length=100)
     _remote_workspace = models.TextField(blank=True)
 
     def __init__(self, *args, **kwargs):
@@ -101,6 +101,9 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def job_script_name(self):
+        """
+        returns the job_script name.
+        """
         try:
             return os.path.split(self.job_script)[-1]
         except (AttributeError, IndexError):
@@ -108,6 +111,10 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def token(self):
+        """
+        returns the user access token.
+        """
+
         if not getattr(self, '_token', None) or self._token is None:
             try:
                 social = self.user.social_auth.get(provider='UITPlus')
@@ -117,31 +124,50 @@ class UitPlusJob(PbsScript, TethysJob):
         return self._token
 
     @property
+    def remote_workspace_id(self):
+        """
+        returns the user access token.
+        """
+
+        if not self._remote_workspace_id:
+            self._remote_workspace_id = str(uuid.uuid4())
+        return self._remote_workspace_id
+
+    @property
     def remote_workspace_suffix(self):
+        """
+        returns the job specific suffix
+        """
         if not self._remote_workspace:
-            workspace_path = os.path.join(self.label, self.name, str(self._remote_workspace_id))
+            workspace_path = os.path.join(self.label, self.name, str(self.remote_workspace_id))
             self._remote_workspace = workspace_path
         return self._remote_workspace
 
-    # job work directory
     @property
     def work_dir(self):
+        """
+        returns the job work directory from super computer
+        """
         if not getattr(self, '_work_dir', None):
             WORKDIR = self.get_environment_variable('WORKDIR')
             self._work_dir = os.path.join(WORKDIR, self.remote_workspace_suffix)
         return self._work_dir
 
-    # job archive directory
     @property
     def archive_dir(self):
+        """
+        return the job archive directory from super computer
+        """
         if not getattr(self, '_archive_dir', None):
             ARCHIVE_HOME = self.get_environment_variable('ARCHIVE_HOME')
             self._archive_dir = os.path.join(ARCHIVE_HOME, self.remote_workspace_suffix)
         return self._archive_dir
 
-    # job home directory
     @property
     def home_dir(self):
+        """
+        returns the job home directory from super computer
+        """
         if not getattr(self, '_home_dir', None):
             HOME = self.get_environment_variable('HOME')
             self._home_dir = os.path.join(HOME, self.remote_workspace_suffix)
@@ -149,6 +175,9 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def client(self):
+        """
+        returns the uit client based on a valid token
+        """
         if not getattr(self, '_client', None) or self._client is None:
             # Create a client with token
             self._client = Client(token=self.token)
@@ -173,6 +202,9 @@ class UitPlusJob(PbsScript, TethysJob):
         return ret.strip()
 
     def render_execution_block(self):
+        """
+        Render the execution block from a template using django templating
+        """
         cleanup_walltime = strfdelta(self.max_cleanup_time, '%H:%M:%S')
 
         context = {
@@ -200,6 +232,9 @@ class UitPlusJob(PbsScript, TethysJob):
         return execution_block
 
     def _execute(self):
+        """
+        Executes the job using the UIT Plus Python client
+        """
         # Get client
         client = self.client
 
@@ -240,6 +275,7 @@ class UitPlusJob(PbsScript, TethysJob):
         # Submit job with PbsScript object and remote workspace
         job_id = client.submit(self, self.work_dir)
 
+
         # Save job id to job_id
         self.job_id = job_id
         self.save()
@@ -260,16 +296,23 @@ class UitPlusJob(PbsScript, TethysJob):
         # 2924080.topaz10   rdp nswain  00:11:59    R   debug
         try:
             lines = status_string.split('\n')
-            status_line = lines[2]
+            status_line = lines[5]
             cols = status_line.split()
-            status = cols[4].strip()
+            status = cols[9].strip()
+            print(self.UIT_TO_TETHYS_STATUSES[status])
             return self.UIT_TO_TETHYS_STATUSES[status]
 
         except (IndexError, AttributeError):
             return 'ERR'
 
     def _update_status(self):
+        """
+         Retrieve a job’s status using the UIT Plus Python client.
+         Translate UitJob status to TethysJob status and save in database
+        """
         # Get status using qstat with -H option to get historical data when job finishes.
+        import pdb
+        pdb.set_trace()
         pbs_command = 'qstat -H ' + self.job_id
         try:
             status_string = self.client.call(command=pbs_command, work_dir=self.work_dir)
@@ -280,6 +323,9 @@ class UitPlusJob(PbsScript, TethysJob):
         self.save()
 
     def _process_results(self):
+        """
+         Processes the results using the UIT Plus Python client
+        """
         # Get client using client property
         client = self.client
         # path to store transfer output files
@@ -308,11 +354,26 @@ class UitPlusJob(PbsScript, TethysJob):
                                      local_path=job_transfer_output_files)
 
     def get_remote_file(self, remote_files_path, local_path):
+        """
+        this method is used transfer the output files using client.get_file method
+        Parameters
+        ----------
+        remote_files_path: str
+            remote file path
+        local_path: str
+            local file path
+        Return
+        -------
+        if the file transfer is success returns True.
+        """
         for remote_file_path in remote_files_path:
             ret = self.client.get_file(remote_path=remote_file_path, local_path=local_path)
         return ret['success'] == 'true'
 
     def stop(self):
+        """
+        Stops/cancels a job using the UIT Plus Python client
+        """
         # delete the job
         pbs_command = 'qdel ' + self.job_id
         try:
@@ -322,6 +383,9 @@ class UitPlusJob(PbsScript, TethysJob):
             return False
 
     def pause(self):
+        """
+        Pauses a job using the UIT Plus Python client
+        """
         # hold the job
         pbs_command = 'qhold ' + self.job_id
         try:
@@ -331,6 +395,9 @@ class UitPlusJob(PbsScript, TethysJob):
             return False
 
     def resume(self):
+        """
+        Resumes a paused job using the UIT Plus Python client
+        """
         # resume the job
         pbs_command = 'qrls ' + self.job_id
         try:
@@ -340,6 +407,9 @@ class UitPlusJob(PbsScript, TethysJob):
             return False
 
     def clean(self, archive=False):
+        """
+        Remove all files and directories associated with the job
+        """
         # Get client
         client = self.client
 
@@ -353,6 +423,13 @@ class UitPlusJob(PbsScript, TethysJob):
             return False
 
     def render_clean_script(self, archive=False):
+        """
+        Render the execution block from a template using django templating
+        Parameters
+        ----------
+        archive: bool
+            Remove files from archive if True. Defaults to False
+        """
         cleanup_walltime = strfdelta(self.max_cleanup_time, '%H:%M:%S')
 
         context = {
