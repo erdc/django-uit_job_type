@@ -8,6 +8,7 @@ import datetime as dt
 from django.db import models
 from picklefield import PickledObjectField
 from jinja2 import Template
+from uit.exceptions import DpRouteError
 from uit.uit import Client
 from uit.pbs_script import PbsScript, PbsDirective
 from tethys_compute.models.tethys_job import TethysJob
@@ -315,7 +316,10 @@ class UitPlusJob(PbsScript, TethysJob):
         # Get status using qstat with -H option to get historical data when job finishes.
         try:
             pbs_command = 'qstat -H ' + self.job_id
-            status_string = self.client.call(command=pbs_command, work_dir=self.work_dir)
+            status_string = self.client.call(command=pbs_command, work_dir='/tmp')
+        except DpRouteError as e:
+            log.info('Ignoring DP_Route error: {}'.format(e))
+            return
         except RuntimeError as e:
             log.error('Attempt to get status for job %s failed: %s', self.job_id, str(e))
             self._status = 'ERR'
