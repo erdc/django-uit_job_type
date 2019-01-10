@@ -279,9 +279,11 @@ class UitPlusJob(PbsScript, TethysJob):
         job_id = client.submit(self, self.work_dir)
 
 
-        # Save job id to job_id
+        # Save our HPC job_id and set status to submitted
         self.job_id = job_id
+        self._status = 'SUB'
         self.save()
+
 
     def _parse_status(self, status_string):
         """
