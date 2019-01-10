@@ -329,7 +329,7 @@ class TestUitPlusJob(TestCase):
         remote_files_path = ['WORKDIR//file1.xml']
         local_path = 'Local_work_dir'
         mock_client.get_file.return_value = {'success': True}
-        ret = self.uitplusjob.get_remote_file(remote_files_path=remote_files_path, local_path=local_path)
+        ret = self.uitplusjob.get_remote_files(remote_files_path=remote_files_path, local_path=local_path)
         # test results
         call_args = mock_client.get_file.call_args
         self.assertEqual('Local_work_dir', call_args[1]['local_path'])

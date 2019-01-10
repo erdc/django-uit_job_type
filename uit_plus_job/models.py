@@ -350,16 +350,16 @@ class UitPlusJob(PbsScript, TethysJob):
         # Get transfer_output_files from work_dir
         work_directory_json_response = self.client.list_dir(path=self.work_dir)
         if work_directory_json_response:
-            self.get_remote_file(remote_files_path=self.transfer_output_files,
-                                 local_path=job_transfer_output_files)
+            self.get_remote_files(remote_files_path=self.transfer_output_files,
+                                  local_path=job_transfer_output_files)
         else:
             # Get transfer_output_files from home_dir when work_dir doesn't exist
             home_directory_json_response = self.client.list_dir(path=self.home_dir)
             if home_directory_json_response:
-                self.get_remote_file(remote_files_path=self.transfer_output_files,
-                                     local_path=job_transfer_output_files)
+                self.get_remote_files(remote_files_path=self.transfer_output_files,
+                                      local_path=job_transfer_output_files)
 
-    def get_remote_file(self, remote_files_path, local_path):
+    def get_remote_files(self, remote_files_path, local_path):
         """
         this method is used transfer the output files using client.get_file method
         Parameters
@@ -370,11 +370,18 @@ class UitPlusJob(PbsScript, TethysJob):
             local file path
         Return
         -------
-        if the file transfer is success returns True.
+        Returns True if all file transfers succeed.
         """
+        success = True
         for remote_file_path in remote_files_path:
-            ret = self.client.get_file(remote_path=remote_file_path, local_path=local_path)
-        return ret['success'] == 'true'
+            try:
+                ret = self.client.get_file(remote_path=remote_file_path, local_path=local_path)
+                if ret['success'] != "true":
+                    success = False
+            except RuntimeError as e:
+                success = False
+                logging.ERROR("Failed to get remote file: {}".format(e))
+        return success
 
     def stop(self):
         """
