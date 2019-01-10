@@ -3,6 +3,7 @@ import os
 import uuid
 import types
 import inspect
+import logging
 import datetime as dt
 from django.db import models
 from picklefield import PickledObjectField
@@ -12,6 +13,7 @@ from uit.pbs_script import PbsScript, PbsDirective
 from tethys_compute.models.tethys_job import TethysJob
 from uit_plus_job.util import strfdelta
 
+log = logging.getLogger('tethys.' + __name__)
 
 class UitPlusJob(PbsScript, TethysJob):
     """
@@ -21,15 +23,15 @@ class UitPlusJob(PbsScript, TethysJob):
         'B': 'RUN',  # Array job: at least one subjob has started
         'E': 'COM',  # Job is exiting after having run.
         'F': 'COM',  # Job is finished.
-        'H': 'PEN',  # Job is held.
-        'M': 'PEN',  # Job was moved to another server.
-        'Q': 'PEN',  # Job is queued.
+        'H': 'SUB',  # Job is held.
+        'M': 'SUB',  # Job was moved to another server.
+        'Q': 'SUB',  # Job is queued.
         'R': 'RUN',  # Job is running.
         'S': 'ABT',  # Job is suspended.
-        'T': 'PEN',  # Job is being moved to a new location.
+        'T': 'SUB',  # Job is being moved to a new location.
         'U': 'ABT',  # Cycle-harvesting job is suspended due to keyboard activity.
-        'W': 'PEN',  # Job is waiting for its submitter-assigned start time to be reached.
-        'X': 'PEN',  # Subjob has completed execution or has been deleted.
+        'W': 'SUB',  # Job is waiting for its submitter-assigned start time to be reached.
+        'X': 'RUN',  # Subjob has completed execution or has been deleted.
     }
 
     SYSTEM_CHOICES = (
@@ -311,12 +313,12 @@ class UitPlusJob(PbsScript, TethysJob):
          Translate UitJob status to TethysJob status and save in database
         """
         # Get status using qstat with -H option to get historical data when job finishes.
-        import pdb
-        pdb.set_trace()
-        pbs_command = 'qstat -H ' + self.job_id
         try:
+            pbs_command = 'qstat -H ' + self.job_id
             status_string = self.client.call(command=pbs_command, work_dir=self.work_dir)
-        except RuntimeError:
+        except RuntimeError as e:
+            log.error('Attempt to get status for job %s failed: %s', self.job_id, str(e))
+            self._status = 'ERR'
             return
 
         self._status = self._parse_status(status_string)
