@@ -129,7 +129,7 @@ class UitPlusJob(PbsScript, TethysJob):
     @property
     def remote_workspace_id(self):
         """
-        returns the user access token.
+        Returns the UUID associated with this job to be used as a workspace io
         """
 
         if not self._remote_workspace_id:
