@@ -360,8 +360,10 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         # Ensure the local transfer directory exists
         Path(self._local_transfer_dir).mkdir(parents=True, exist_ok=True)
-        remote_dir  = os.path.join(self.home_dir, 'transfer')
+        remote_dir = os.path.join(self.home_dir, 'transfer')
         self.get_remote_files(remote_dir, self.transfer_output_files)
+        self.get_remote_files(remote_dir, ["log.stdout", "log.stderr"])
+
 
 
     def get_remote_files(self, remote_dir, remote_filenames):
