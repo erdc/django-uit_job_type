@@ -216,7 +216,7 @@ class TestUitPlusJob(TestCase):
     def test_render_execution_block(self, mock_get_env):
         mock_get_env.side_effect = ['{WORKDIR}', '{ARCHIVE_HOME}', '{HOME_DIR}']
 
-        ret = self.uitplusjob.render_execution_block()
+        ret = self.uitplusjob.render_script_templates()
         self.assertIn("mkdir -p {WORKDIR}/test_label/uit_job", ret)
         self.assertIn('cd {WORKDIR}/test_label/uit_job', ret)
         self.assertIn('archive get -C ${ARCHIVE_HOME}/file2.xml', ret)
@@ -329,7 +329,7 @@ class TestUitPlusJob(TestCase):
         remote_files_path = ['WORKDIR//file1.xml']
         local_path = 'Local_work_dir'
         mock_client.get_file.return_value = {'success': True}
-        ret = self.uitplusjob.get_remote_files(remote_files_path=remote_files_path, local_path=local_path)
+        ret = self.uitplusjob.get_remote_files(remote_filenames=remote_files_path, local_dir=local_path)
         # test results
         call_args = mock_client.get_file.call_args
         self.assertEqual('Local_work_dir', call_args[1]['local_path'])
