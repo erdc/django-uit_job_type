@@ -224,10 +224,9 @@ class UitPlusJob(PbsScript, TethysJob):
         try:
             self.client.call(command=command, work_dir='/tmp')
         except RuntimeError as e:
-            self.extended_properties['error_message'] = 'An error occurred while setting up job directory on "{}": {}'.format(self.system, str(e))
             self._status = 'ERR'
             self.save()
-            raise RuntimeError(self.extended_properties['error_message'])
+            raise RuntimeError('Error setting up job directory on "{}": {}'.format(self.system, str(e))
 
         # Transfer any files listed in transfer_input_files to work_dir on supercomputer
         for transfer_file in self.transfer_input_files:
@@ -238,7 +237,7 @@ class UitPlusJob(PbsScript, TethysJob):
             if 'success' in ret and ret['success'] == 'false':
                 self._status = 'ERR'
                 self.save()
-                raise RuntimeError('An exception occurred while transferring input files: {}'.format(ret['error']))
+                raise RuntimeError('Failed to transfer input files: {}'.format(ret['error']))
 
         # Transfer the job_script to the work_dir on supercomputer
         if self.transfer_job_script:
@@ -248,7 +247,7 @@ class UitPlusJob(PbsScript, TethysJob):
             if 'success' in ret and ret['success'] == 'false':
                 self._status = 'ERR'
                 self.save()
-                raise RuntimeError('An exception occurred while transferring the job script: {}'.format(ret['error']))
+                raise RuntimeError('Failed to transfer the job script: {}'.format(ret['error']))
 
         # Render the execution block
         context = {
