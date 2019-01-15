@@ -12,7 +12,7 @@ cd {{ job_work_dir }}
 
 # stage input data from archive
 {% for archive_input_file in archive_input_files %}
-archive get -C ${ARCHIVE_HOME}/{{ archive_input_file }}
+archive get -C ${ARCHIVE_HOME} {{ archive_input_file }}
 {% endfor %}
 
 # stage input data from home
