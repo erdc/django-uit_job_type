@@ -226,7 +226,7 @@ class UitPlusJob(PbsScript, TethysJob):
         except RuntimeError as e:
             self._status = 'ERR'
             self.save()
-            raise RuntimeError('Error setting up job directory on "{}": {}'.format(self.system, str(e))
+            raise RuntimeError('Error setting up job directory on "{}": {}'.format(self.system, str(e)))
 
         # Transfer any files listed in transfer_input_files to work_dir on supercomputer
         for transfer_file in self.transfer_input_files:
