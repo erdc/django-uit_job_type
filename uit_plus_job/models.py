@@ -309,15 +309,16 @@ class UitPlusJob(PbsScript, TethysJob):
             str: TethysJob status string.
         """
         # EXAMPLE:
-        # Job id    Name    User    Time    Use S   Queue
-        # --------  -----   ------- ------  --- -   ------
-        # 2924080.topaz10   rdp nswain  00:11:59    R   debug
+        # topaz10:
+        #                                                             Req'd  Req'd   Elap
+        # Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
+        # --------------- -------- -------- ---------- ------ --- --- ------ ----- - -----
+        # 3101546.topaz10 user     transfer cleanup.pb --     1   1   --     00:05 Q --
         try:
             lines = status_string.split('\n')
             status_line = lines[5]
             cols = status_line.split()
             status = cols[9].strip()
-            print("{}->".format(self.UIT_TO_TETHYS_STATUSES[status]), end="")
             return self.UIT_TO_TETHYS_STATUSES[status]
 
         except (IndexError, AttributeError):
@@ -350,7 +351,6 @@ class UitPlusJob(PbsScript, TethysJob):
             else:
                 raise RuntimeError("Could not find cleanup script ID.")
 
-        print(new_status)
         self._status = new_status
         self.save()
 
