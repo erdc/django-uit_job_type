@@ -1,6 +1,9 @@
 ## Execution Block ----------------------------------------
-# Environment Setup
+echo -e "-------------------------\n"
+echo -e "Starting Execute Block...\n"
+echo -e "-------------------------\n"
 
+# Environment Setup
 # make and cd to your job working directory
 if [ ! -d {{ job_work_dir }} ]; then
   mkdir -p {{ job_work_dir }}
@@ -19,8 +22,13 @@ cp ${HOME}/{{ home_input_file }} .
 
 ## Launching ----------------------------------------------
 chmod +x {{ executable }}
+echo Listing FDs of {{ executable }}
+lsof ./{{ executable }}
 ./{{ executable }}
 
 ## Cleanup ------------------------------------------------
 # Cleanup is handled by a co-submitted script that has this script as its dependency.
 
+echo -e "-------------------------\n"
+echo -e "Finished Execute Block...\n"
+echo -e "-------------------------\n"

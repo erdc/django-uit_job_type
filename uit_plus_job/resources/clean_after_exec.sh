@@ -46,9 +46,9 @@ cp {{ transfer_output_file }} {{ job_home_dir }}/transfer/
 
 {# TRANSFER LOG FILES #}
 # transfer the log files to home
-cat *.o{{ execute_job_id }} > {{ job_home_dir }}/transfer/log.stdout
-cat *.e{{ execute_job_id }} > {{ job_home_dir }}/transfer/log.stderr
+cat *.o{{ execute_job_num }} > {{ job_home_dir }}/transfer/log.stdout
+cat *.e{{ execute_job_num }} > {{ job_home_dir }}/transfer/log.stderr
 
 # Remove scratch directory from the file system.
 cd ${WORKDIR}
-# rm -rf {{ job_work_dir }}
+rm -rf {{ job_work_dir }}

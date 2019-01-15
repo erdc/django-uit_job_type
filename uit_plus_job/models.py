@@ -276,6 +276,7 @@ class UitPlusJob(PbsScript, TethysJob):
         cleanup_walltime = strfdelta(self.max_cleanup_time, '%H:%M:%S')
         context = {
             'execute_job_id': execute_job_id,
+            'execute_job_num' : execute_job_id.split('.', 1)[0],
             'job_work_dir': self.work_dir,
             'job_archive_dir': self.archive_dir,
             'job_home_dir': self.home_dir,
