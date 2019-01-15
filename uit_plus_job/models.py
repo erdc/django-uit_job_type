@@ -17,6 +17,7 @@ from uit_plus_job.util import strfdelta
 
 log = logging.getLogger('tethys.' + __name__)
 
+
 class UitPlusJob(PbsScript, TethysJob):
     """
     UIT+ Job type.
@@ -392,7 +393,8 @@ class UitPlusJob(PbsScript, TethysJob):
                     success = False
             except IOError as e:
                 success = False
-                logging.ERROR("Failed to get remote file: {}".format(str(e)))
+                log.error("Failed to get remote file: {}".format(str(e)))
+                # logging.ERROR("Failed to get remote file: {}".format(str(e)))
         return success
 
     def stop(self):
