@@ -21,10 +21,10 @@ cp ${HOME}/{{ home_input_file }} .
 {% endfor %}
 
 ## Launching ----------------------------------------------
-chmod +x {{ executable }}
-echo Listing FDs of {{ executable }}
-lsof ./{{ executable }}
-./{{ executable }}
+#
+cp "{{ executable }}" "{{ executable }}.run"
+chmod +x "{{ executable }}.run"
+./"{{ executable }}.run"
 
 ## Cleanup ------------------------------------------------
 # Cleanup is handled by a co-submitted script that has this script as its dependency.
