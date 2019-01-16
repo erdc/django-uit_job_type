@@ -1,14 +1,15 @@
 import mock
+import datetime
 from uit_plus_job.models import UitPlusJob
 from django.contrib.auth.models import User
 from datetime import timedelta
 from pytz import timezone
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TransactionTestCase
 from social_django.models import UserSocialAuth
 
 
-class TestUitPlusJob(TestCase):
+class TestUitPlusJob(TransactionTestCase):
 
     def setUp(self):
         self.tz = timezone('America/Denver')
@@ -23,10 +24,8 @@ class TestUitPlusJob(TestCase):
             description='test_description',
             label='test_label',
             workspace='test_ws',
-
             node_type='compute',
             system='topaz',
-
             job_id='J0001',
             project_id='P001',
             num_nodes=10,
@@ -62,51 +61,47 @@ class TestUitPlusJob(TestCase):
         self.assertEqual('topaz', self.uitplusjob.system)
         self.assertTrue(self.uitplusjob.transfer_job_script)
 
-    # TODO: Need to get it fixed.
-    # def test_init_args(self):
-    #     from django.db import transaction
-    #     import pdb
-    #     pdb.set_trace()
-    #     with transaction.atomic():
-    #         import datetime
-    #         self.uitplusjob_args = UitPlusJob(
-    #             100,
-    #             'uit_job',
-    #             'test_description',
-    #             self.user,
-    #             'test_label',
-    #             datetime.datetime(2018, 1, 1),
-    #             datetime.datetime(2018, 1, 1),
-    #             datetime.datetime(2018, 1, 1),
-    #             datetime.datetime(2018, 1, 1),
-    #             'test_ws',
-    #             {},
-    #             'test2',
-    #             'R',
-    #             'test3',
-    #             'J0001',
-    #             'P001',
-    #             'topaz',
-    #             'compute',
-    #             10,
-    #             5,
-    #             timedelta(hours=10, seconds=42),
-    #             timedelta(hours=10, seconds=60),
-    #             'debug',
-    #             'PBSScript',
-    #             'PBSScript',
-    #             ['file1.xml', 'file10.xml'],
-    #             ['file2.xml', 'file3.txt'],
-    #             ['file3.xml', 'file4.xml'],
-    #             ['transfer_out.out', 'transfer_out2.out'],
-    #             ['archive_out.out', 'archive_out2.out'],
-    #             ['home.out', 'test_home.out'],
-    #             {'OpenGL': 'load'},
-    #             '-j',
-    #             '12345',
-    #             'workspace')
-    #
-    #     self.assertEqual('uit_job', self.uitplusjob_args.name)
+    def test_init_args(self):
+        uitplusjob_args = UitPlusJob(
+            100,  # id
+            'uit_job',  # name
+            'test_description',  # description
+            self.user.id,  # user
+            'test_label',  # label
+            datetime.datetime(2018, 1, 1),  # create_time
+            datetime.datetime(2018, 1, 1),  # execute_time
+            datetime.datetime(2018, 1, 1),  # start_time
+            datetime.datetime(2018, 1, 1),  # complete_time
+            'test_ws',  # workspace
+            {},  # extended_properties
+            'test2',  # process_results_function
+            'R',  # status
+            'test3',  # tethysjob_ptr
+            'J0001',  # job_id
+            'P001',  # project_id
+            'topaz',  # system
+            'compute',  # node_type
+            10,  # num_nodes
+            5,  # process_per_node
+            timedelta(hours=10, seconds=42),  # max_time
+            timedelta(hours=10, seconds=60),  # max_cleanup_time
+            'debug',  # queue
+            'PBSScript',  # job_script
+            True,  # transfer_job_script
+            ['file1.xml', 'file10.xml'],  # transfer_input_files
+            ['file2.xml', 'file3.txt'],  # archive_input_files
+            ['file3.xml', 'file4.xml'],  # home_input_files
+            ['transfer_out.out', 'transfer_out2.out'],  # transfer_output_files
+            ['archive_out.out', 'archive_out2.out'],  # archive_output_files
+            ['home.out', 'test_home.out'],  # home_output_files
+            {'OpenGL': 'load'},  # _modules
+            '-j',  # _optional_directives
+            '12345',  # _remote_workspace_id
+            'workspace')  # _remote_workspace
+
+        self.assertEqual('uit_job', uitplusjob_args.name)
+        self.assertEqual('test_description', uitplusjob_args.description)
+        self.assertEqual('PBSScript', uitplusjob_args.job_script)
 
     def test_node_type(self):
         self.uitplusjob.node_type = 'compute'
@@ -484,12 +479,13 @@ class TestUitPlusJob(TestCase):
 
     @mock.patch('uit_plus_job.models.UitPlusJob.client')
     def test_update_status_no_cleanup_job_id(self, mock_client):
-        mock_client.call.return_value = '\n' \
-                                        'topaz10: \n'\
-                                        '                                                            Reqd  Reqd   Elap\n'\
-                                        'Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time\n' \
-                                        ' --------------- -------- -------- ---------- ------ --- --- ------ ----- - -----\n' \
-                                        ' 3101546.topaz10 user     transfer cleanup.pb --     1   1   --     00:05 F --\n'
+        mock_client.call.return_value = \
+            '\n' \
+            'topaz10: \n'\
+            '                                                            Reqd  Reqd   Elap\n'\
+            'Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time\n' \
+            ' --------------- -------- -------- ---------- ------ --- --- ------ ----- - -----\n' \
+            ' 3101546.topaz10 user     transfer cleanup.pb --     1   1   --     00:05 F --\n'
 
         # test the method
         self.assertRaises(RuntimeError, self.uitplusjob._update_status)
@@ -497,18 +493,20 @@ class TestUitPlusJob(TestCase):
     @mock.patch('uit_plus_job.models.UitPlusJob.client')
     @mock.patch('django.db.models.base.Model.save')
     def test_update_status_running(self, mock_save, mock_client):
-        mock_client.call.return_value = '\n' \
-                                        'topaz10: \n' \
-                                        '                                                            Reqd  Reqd   Elap\n' \
-                                        'Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time\n' \
-                                        ' --------------- -------- -------- ---------- ------ --- --- ------ ----- - -----\n' \
-                                        ' 3101546.topaz10 user     transfer cleanup.pb --     1   1   --     00:05 R --\n'
+        mock_client.call.return_value = \
+            '\n' \
+            'topaz10: \n' \
+            '                                                            Reqd  Reqd   Elap\n' \
+            'Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time\n' \
+            ' --------------- -------- -------- ---------- ------ --- --- ------ ----- - -----\n' \
+            ' 3101546.topaz10 user     transfer cleanup.pb --     1   1   --     00:05 R --\n'
 
         # call the method
         self.uitplusjob._update_status()
 
         # test results
         mock_save.assert_called()
+        self.assertEqual('RUN', self.uitplusjob._status)
 
     @mock.patch('uit_plus_job.models.log')
     @mock.patch('uit_plus_job.models.UitPlusJob.client')
@@ -525,3 +523,43 @@ class TestUitPlusJob(TestCase):
 
         self.assertEqual('Attempt to get status for job %s failed: %s', mock_logging.error.call_args_list[0][0][0])
         self.assertEqual('J0001', mock_logging.error.call_args_list[0][0][1])
+
+    @mock.patch('uit_plus_job.models.log')
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    def test_update_status_dproute_error(self, mock_client, mock_logging):
+        from uit.exceptions import DpRouteError
+        mock_client.call.side_effect = DpRouteError("DP_Route_Error")
+
+        # call the method
+        self.assertIsNone(self.uitplusjob._update_status())
+
+        # test results
+        call_args = mock_client.call.call_args_list
+        self.assertDictEqual({'command': 'qstat -H J0001', 'work_dir': '/tmp'},
+                             call_args[0][1])
+
+        self.assertEqual('qstat -H J0001', call_args[0][1]['command'])
+        self.assertEqual('/tmp', call_args[0][1]['work_dir'])
+
+        self.assertEqual('Ignoring DP_Route error: DP_Route_Error', mock_logging.info.call_args[0][0])
+
+    @mock.patch('uit_plus_job.models.UitPlusJob.client')
+    @mock.patch('django.db.models.base.Model.save')
+    def test_update_status_submitted(self, mock_save, mock_client):
+        mock_client.call.return_value = \
+            '\n' \
+            'topaz10: \n' \
+            '                                                            Reqd  Reqd   Elap\n' \
+            'Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time\n' \
+            '--------------- -------- -------- ---------- ------ --- --- ------ ----- - -----\n' \
+            '3101546.topaz10 user     transfer cleanup.pb --     1   1   --     00:05 F --\n'
+
+        self.uitplusjob.extended_properties = {'cleanup_job_id': 'C0001'}
+
+        # call the method
+        self.uitplusjob._update_status()
+
+        # test results
+        mock_save.assert_called()
+        self.assertEqual('SUB', self.uitplusjob._status)
+        self.assertEqual('C0001', self.uitplusjob.job_id)
