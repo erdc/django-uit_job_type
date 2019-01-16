@@ -1,6 +1,7 @@
 import mock
 import datetime
 from uit_plus_job.models import UitPlusJob
+from uit.exceptions import DpRouteError
 from django.contrib.auth.models import User
 from datetime import timedelta
 from pytz import timezone
@@ -527,7 +528,6 @@ class TestUitPlusJob(TransactionTestCase):
     @mock.patch('uit_plus_job.models.log')
     @mock.patch('uit_plus_job.models.UitPlusJob.client')
     def test_update_status_dproute_error(self, mock_client, mock_logging):
-        from uit.exceptions import DpRouteError
         mock_client.call.side_effect = DpRouteError("DP_Route_Error")
 
         # call the method
