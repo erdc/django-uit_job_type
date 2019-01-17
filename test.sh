@@ -12,6 +12,6 @@ coverage run -a --rcfile=coverage.ini $1 test uit_plus_job.tests.integrated_test
 echo "Unit Tests Coverage Report..."
 coverage report -m
 echo "Linting..."
-#flake8
+flake8
 echo "Testing Complete"
 

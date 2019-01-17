@@ -1,7 +1,6 @@
 # Put your persistent store models in this file
 import os
 import uuid
-import types
 import inspect
 import logging
 import datetime as dt
@@ -105,11 +104,6 @@ class UitPlusJob(PbsScript, TethysJob):
         TethysJob.__init__(self, *args, **kwargs)
 
         self.save()
-
-        # TODO: Decide where to store the job output files, for now we are using `../../transfer/ + job_name`
-        self._local_transfer_dir = os.path.join(str(Path(__file__).parent.parent), 'transfer',
-                                                self.name, self.remote_workspace_id)
-
 
     @property
     def job_script_name(self):
@@ -271,13 +265,11 @@ class UitPlusJob(PbsScript, TethysJob):
 
         # Submit job with PbsScript object and remote workspace
         execute_job_id = client.submit(self, self.work_dir)
-
-
         # Render cleanup script
         cleanup_walltime = strfdelta(self.max_cleanup_time, '%H:%M:%S')
         context = {
             'execute_job_id': execute_job_id,
-            'execute_job_num' : execute_job_id.split('.', 1)[0],
+            'execute_job_num': execute_job_id.split('.', 1)[0],
             'job_work_dir': self.work_dir,
             'job_archive_dir': self.archive_dir,
             'job_home_dir': self.home_dir,
@@ -360,12 +352,10 @@ class UitPlusJob(PbsScript, TethysJob):
          Processes the results using the UIT Plus Python client
         """
         # Ensure the local transfer directory exists
-        Path(self._local_transfer_dir).mkdir(parents=True, exist_ok=True)
+        Path(self.workspace).mkdir(parents=True, exist_ok=True)
         remote_dir = os.path.join(self.home_dir, 'transfer')
         self.get_remote_files(remote_dir, self.transfer_output_files)
         self.get_remote_files(remote_dir, ["log.stdout", "log.stderr"])
-
-
 
     def get_remote_files(self, remote_dir, remote_filenames):
         """
@@ -385,7 +375,7 @@ class UitPlusJob(PbsScript, TethysJob):
 
         success = True
         for remote_file in remote_filenames:
-            local_path = os.path.join(self._local_transfer_dir, remote_file)
+            local_path = os.path.join(self.workspace, remote_file)
             remote_path = os.path.join(remote_dir, remote_file)
             try:
                 self.client.get_file(remote_path=remote_path, local_path=local_path)
@@ -404,7 +394,7 @@ class UitPlusJob(PbsScript, TethysJob):
         # delete the job
         pbs_command = 'qdel ' + self.job_id
         try:
-            ret = self.client.call(command=pbs_command, work_dir=self.work_dir)
+            self.client.call(command=pbs_command, work_dir=self.work_dir)
             return True
         except RuntimeError:
             return False
@@ -416,7 +406,7 @@ class UitPlusJob(PbsScript, TethysJob):
         # hold the job
         pbs_command = 'qhold ' + self.job_id
         try:
-            ret = self.client.call(command=pbs_command, work_dir=self.work_dir)
+            self.client.call(command=pbs_command, work_dir=self.work_dir)
             return True
         except RuntimeError:
             return False
@@ -428,7 +418,7 @@ class UitPlusJob(PbsScript, TethysJob):
         # resume the job
         pbs_command = 'qrls ' + self.job_id
         try:
-            ret = self.client.call(command=pbs_command, work_dir=self.work_dir)
+            self.client.call(command=pbs_command, work_dir=self.work_dir)
             return True
         except RuntimeError:
             return False
@@ -443,8 +433,9 @@ class UitPlusJob(PbsScript, TethysJob):
         # clean the job directories
         pbs_clean_script = self.render_clean_script(archive)
         try:
-            # TODO: Refactor to remove home and work dir using client.call() Change cleanblock.sh to only remove the archive directory. Only submit if archive is True
-            ret = client.submit(pbs_clean_script, self.work_dir, remote_name='clean.pbs')
+            # TODO: Refactor to remove home and work dir using client.call() Change
+            #  cleanblock.sh to only remove the archive directory. Only submit if archive is True
+            client.submit(pbs_clean_script, self.work_dir, remote_name='clean.pbs')
             return True
         except RuntimeError:
             return False
