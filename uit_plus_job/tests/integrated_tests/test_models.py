@@ -28,6 +28,7 @@ class TestUitPlusJob(TransactionTestCase):
             node_type='compute',
             system='topaz',
             job_id='J0001',
+
             project_id='P001',
             num_nodes=10,
             processes_per_node=5,
@@ -107,6 +108,9 @@ class TestUitPlusJob(TransactionTestCase):
     def test_node_type(self):
         self.uitplusjob.node_type = 'compute'
 
+        # since _remote_workspace_id is lazy loaded it wont populate unless we called it
+        self.uitplusjob.remote_workspace_id
+
         # Field Validation
         self.uitplusjob.clean_fields()
 
@@ -118,6 +122,9 @@ class TestUitPlusJob(TransactionTestCase):
 
     def test_system(self):
         self.uitplusjob.system = 'topaz'
+
+        # since _remote_workspace_id is lazy loaded it wont populate unless we called it
+        self.uitplusjob.remote_workspace_id
 
         # Field Validation
         self.uitplusjob.clean_fields()
