@@ -381,10 +381,12 @@ class UitPlusJob(PbsScript, TethysJob):
                 self.client.get_file(remote_path=remote_path, local_path=local_path)
                 if not os.path.exists(local_path):
                     success = False
-            except IOError as e:
+            except RuntimeError as e:
                 success = False
                 log.error("Failed to get remote file: {}".format(str(e)))
-                # logging.ERROR("Failed to get remote file: {}".format(str(e)))
+                with open(local_path, 'w+') as f:
+                    print("Could not transfer file: {}".format(str(e)), file=f)
+
         return success
 
     def stop(self):
