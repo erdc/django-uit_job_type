@@ -1,11 +1,15 @@
 # Put your persistent store models in this file
 import os
+import shutil
+import threading
 import uuid
 import inspect
 import logging
 import datetime as dt
 from pathlib import Path
 from django.db import models
+from django.db.models.signals import pre_delete
+from django.dispatch import receiver
 from picklefield import PickledObjectField
 from jinja2 import Template
 from uit.exceptions import DpRouteError
@@ -155,8 +159,8 @@ class UitPlusJob(PbsScript, TethysJob):
         returns the job work directory from super computer
         """
         if not getattr(self, '_work_dir', None):
-            WORKDIR = self.get_environment_variable('WORKDIR')
-            self._work_dir = os.path.join(WORKDIR, self.remote_workspace_suffix)
+            workdir = self.get_environment_variable('WORKDIR')
+            self._work_dir = os.path.join(workdir, self.remote_workspace_suffix)
         return self._work_dir
 
     @property
@@ -165,8 +169,8 @@ class UitPlusJob(PbsScript, TethysJob):
         return the job archive directory from super computer
         """
         if not getattr(self, '_archive_dir', None):
-            ARCHIVE_HOME = self.get_environment_variable('ARCHIVE_HOME')
-            self._archive_dir = os.path.join(ARCHIVE_HOME, self.remote_workspace_suffix)
+            archive_home = self.get_environment_variable('ARCHIVE_HOME')
+            self._archive_dir = os.path.join(archive_home, self.remote_workspace_suffix)
         return self._archive_dir
 
     @property
@@ -175,8 +179,8 @@ class UitPlusJob(PbsScript, TethysJob):
         returns the job home directory from super computer
         """
         if not getattr(self, '_home_dir', None):
-            HOME = self.get_environment_variable('HOME')
-            self._home_dir = os.path.join(HOME, self.remote_workspace_suffix)
+            home = self.get_environment_variable('HOME')
+            self._home_dir = os.path.join(home, self.remote_workspace_suffix)
         return self._home_dir
 
     @property
@@ -365,7 +369,7 @@ class UitPlusJob(PbsScript, TethysJob):
         ----------
         remote_dir: str
             the remote directory from which to pull files
-        remote_filenames: str
+        remote_filenames: List[str]
             list of file names to retrieve from remote_dir
 
         Return
@@ -429,45 +433,46 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         Remove all files and directories associated with the job
         """
-        # Get client
-        client = self.client
 
-        # clean the job directories
-        pbs_clean_script = self.render_clean_script(archive)
-        try:
-            # TODO: Refactor to remove home and work dir using client.call() Change
-            #  cleanblock.sh to only remove the archive directory. Only submit if archive is True
-            client.submit(pbs_clean_script, self.work_dir, remote_name='clean.pbs')
-            return True
-        except RuntimeError:
-            return False
+        # Remove local workspace
+        thread = threading.Thread(target=shutil.rmtree, args=(self.workspace, True))
+        thread.daemon = True
+        thread.start()
 
-    def render_clean_script(self, archive=False):
-        """
-        Render the execution block from a template using django templating
-        Parameters
-        ----------
-        archive: bool
-            Remove files from archive if True. Defaults to False
-        """
-        cleanup_walltime = strfdelta(self.max_cleanup_time, '%H:%M:%S')
+        # Remove remote locations
+        rm_cmd = "rm -rf {} || true"
+        commands = []
+        for path in (self.work_dir, self.home_dir):
+            # TODO: We should probably change this to figure out the actual remote workspace path, instead of
+            #  assuming it is one above our work/home path.
+            commands.append(rm_cmd.format(os.path.abspath(os.path.join(path, '..'))))
+        if archive:
+            commands.append("archive rm -rf {} || true".format(self.archive_dir))
 
-        context = {
-            'job_work_dir': self.work_dir,
-            'project_id': self.project_id,
-            'job_archive_dir': self.archive_dir,
-            'job_home_dir': self.home_dir,
-            'archive': archive,
-            'cleanup_walltime': cleanup_walltime,
-        }
+        for cmd in commands:
+            thread = threading.Thread(target=self.client.call, kwargs={'command': cmd, 'work_dir': '/'})
+            thread.daemon = True
+            thread.start()
+            log.info("Executing command '{}' on topaz".format(cmd))
+        return True
 
-        bash_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uit_plus_job', 'resources')
 
-        clean_block_path = os.path.join(bash_file_path, 'cleanblock.sh')
+@receiver(pre_delete, sender=UitPlusJob)
+def uit_job_pre_delete(sender, instance, using, **kwargs):
+    """
+    Pre-delete hook to make sure we clean up our workspace
 
-        with open(clean_block_path, 'r') as clean_block_file:
-            text = clean_block_file.read()
-            template = Template(text)
-            clean_block = template.render(context)
+    Args:
+        sender: The model's class
+        instance: The instance being deleted
+        using: The DB alias in use
+        **kwargs:
 
-        return clean_block
+    Returns:
+        Nothing
+
+    """
+    try:
+        instance.clean()
+    except Exception as e:
+        log.exception(str(e))
