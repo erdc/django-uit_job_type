@@ -110,6 +110,41 @@ class UitPlusJob(PbsScript, TethysJob):
         self.save()
 
     @property
+    def archive_dir(self):
+        """
+        return the job archive directory from super computer
+        """
+        if not getattr(self, '_archive_dir', None):
+            archive_home = self.get_environment_variable('ARCHIVE_HOME')
+            self._archive_dir = os.path.join(archive_home, self.remote_workspace_suffix)
+        return self._archive_dir
+
+    @property
+    def client(self):
+        """
+        returns the uit client based on a valid token
+        """
+        if not getattr(self, '_client', None) or self._client is None:
+            # Create a client with token
+            self._client = Client(token=self.token)
+
+            # Connect the client
+            self._client.connect(system=self.system)
+
+        # return the client
+        return self._client
+
+    @property
+    def home_dir(self):
+        """
+        returns the job home directory from super computer
+        """
+        if not getattr(self, '_home_dir', None):
+            home = self.get_environment_variable('HOME')
+            self._home_dir = os.path.join(home, self.remote_workspace_suffix)
+        return self._home_dir
+
+    @property
     def job_script_name(self):
         """
         returns the job_script name.
@@ -118,20 +153,6 @@ class UitPlusJob(PbsScript, TethysJob):
             return os.path.split(self.job_script)[-1]
         except (AttributeError, IndexError):
             return ''
-
-    @property
-    def token(self):
-        """
-        returns the user access token.
-        """
-
-        if not getattr(self, '_token', None) or self._token is None:
-            try:
-                social = self.user.social_auth.get(provider='UITPlus')
-                self._token = social.extra_data['access_token']
-            except (KeyError, AttributeError):
-                self._token = None
-        return self._token
 
     @property
     def remote_workspace_id(self):
@@ -154,6 +175,20 @@ class UitPlusJob(PbsScript, TethysJob):
         return self._remote_workspace
 
     @property
+    def token(self):
+        """
+        returns the user access token.
+        """
+
+        if not getattr(self, '_token', None) or self._token is None:
+            try:
+                social = self.user.social_auth.get(provider='UITPlus')
+                self._token = social.extra_data['access_token']
+            except (KeyError, AttributeError):
+                self._token = None
+        return self._token
+
+    @property
     def work_dir(self):
         """
         returns the job work directory from super computer
@@ -162,41 +197,6 @@ class UitPlusJob(PbsScript, TethysJob):
             workdir = self.get_environment_variable('WORKDIR')
             self._work_dir = os.path.join(workdir, self.remote_workspace_suffix)
         return self._work_dir
-
-    @property
-    def archive_dir(self):
-        """
-        return the job archive directory from super computer
-        """
-        if not getattr(self, '_archive_dir', None):
-            archive_home = self.get_environment_variable('ARCHIVE_HOME')
-            self._archive_dir = os.path.join(archive_home, self.remote_workspace_suffix)
-        return self._archive_dir
-
-    @property
-    def home_dir(self):
-        """
-        returns the job home directory from super computer
-        """
-        if not getattr(self, '_home_dir', None):
-            home = self.get_environment_variable('HOME')
-            self._home_dir = os.path.join(home, self.remote_workspace_suffix)
-        return self._home_dir
-
-    @property
-    def client(self):
-        """
-        returns the uit client based on a valid token
-        """
-        if not getattr(self, '_client', None) or self._client is None:
-            # Create a client with token
-            self._client = Client(token=self.token)
-
-            # Connect the client
-            self._client.connect(system=self.system)
-
-        # return the client
-        return self._client
 
     def get_environment_variable(self, variable):
         """
