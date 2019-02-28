@@ -393,8 +393,6 @@ class UitPlusJob(PbsScript, TethysJob):
         """
          Processes the results using the UIT Plus Python client
         """
-        # Ensure the local transfer directory exists
-        Path(self.workspace).mkdir(parents=True, exist_ok=True)
         remote_dir = os.path.join(self.home_dir, 'transfer')
         self.get_remote_files(remote_dir, self.transfer_output_files)
         self.get_remote_files(remote_dir, ["log.stdout", "log.stderr"])
@@ -405,9 +403,9 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             Nothing
         """
-        self.get_remote_files(self.transfer_intermediate_files)
-        if self.process_intermediate_results_function:
-            self.process_intermediate_results_function()
+        if self.get_remote_files(self.work_dir, self.transfer_intermediate_files):
+            if self.process_intermediate_results_function:
+                self.process_intermediate_results_function()
 
     def get_remote_files(self, remote_dir, remote_filenames):
         """
@@ -424,6 +422,9 @@ class UitPlusJob(PbsScript, TethysJob):
         -------
         Returns True if all file transfers succeed.
         """
+
+        # Ensure the local transfer directory exists
+        Path(self.workspace).mkdir(parents=True, exist_ok=True)
 
         success = True
         for remote_file in remote_filenames:
