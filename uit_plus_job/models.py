@@ -10,6 +10,7 @@ from pathlib import Path
 from django.db import models
 from django.db.models.signals import pre_delete
 from django.dispatch import receiver
+from django.utils import timezone
 from picklefield import PickledObjectField
 from jinja2 import Template
 from tethys_apps.base.function_extractor import TethysFunctionExtractor
@@ -59,7 +60,7 @@ class UitPlusJob(PbsScript, TethysJob):
     intermediate_transfer_interval = models.IntegerField(default=0, null=False)
     job_id = models.CharField(max_length=1024, null=True)
     job_script = models.TextField(null=False)
-    last_intermediate_transfer = models.DateTimeField(null=True)
+    last_intermediate_transfer = models.DateTimeField(null=False, default=timezone.now)
     max_cleanup_time = models.DurationField(null=False, default=dt.timedelta(hours=1))
     max_time = models.DurationField(null=False)
     node_type = models.CharField(max_length=10, choices=NODE_TYPE_CHOICES, default='compute', null=False)
@@ -352,6 +353,17 @@ class UitPlusJob(PbsScript, TethysJob):
          Retrieve a job’s status using the UIT Plus Python client.
          Translate UitJob status to TethysJob status and save in database
         """
+
+        # Get intermediate results, if applicable
+        if self.transfer_intermediate_files:
+            if self.intermediate_transfer_interval == 0 \
+                    or (timezone.now() - self.last_intermediate_transfer).minute > \
+                    self.intermediate_transfer_interval:
+                self.last_intermediate_transfer = timezone.now()
+                thread = threading.Thread(target=self.get_intermediate_results)
+                thread.daemon = True
+                thread.start()
+
         # Get status using qstat with -H option to get historical data when job finishes.
         try:
             pbs_command = 'qstat -H ' + self.job_id
@@ -386,6 +398,16 @@ class UitPlusJob(PbsScript, TethysJob):
         remote_dir = os.path.join(self.home_dir, 'transfer')
         self.get_remote_files(remote_dir, self.transfer_output_files)
         self.get_remote_files(remote_dir, ["log.stdout", "log.stderr"])
+
+    def get_intermediate_results(self):
+        """Retrieve intermediate result files from the supercomputer.
+
+        Returns:
+            Nothing
+        """
+        self.get_remote_files(self.transfer_intermediate_files)
+        if self.process_intermediate_results_function:
+            self.process_intermediate_results_function()
 
     def get_remote_files(self, remote_dir, remote_filenames):
         """
