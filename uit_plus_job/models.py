@@ -354,16 +354,6 @@ class UitPlusJob(PbsScript, TethysJob):
          Translate UitJob status to TethysJob status and save in database
         """
 
-        # Get intermediate results, if applicable
-        if self.transfer_intermediate_files:
-            if self.intermediate_transfer_interval == 0 \
-                    or (timezone.now() - self.last_intermediate_transfer).minute > \
-                    self.intermediate_transfer_interval:
-                self.last_intermediate_transfer = timezone.now()
-                thread = threading.Thread(target=self.get_intermediate_results)
-                thread.daemon = True
-                thread.start()
-
         # Get status using qstat with -H option to get historical data when job finishes.
         try:
             pbs_command = 'qstat -H ' + self.job_id
@@ -387,6 +377,17 @@ class UitPlusJob(PbsScript, TethysJob):
                 raise RuntimeError("Could not find cleanup script ID.")
 
         self._status = new_status
+        self.save()
+
+        # Get intermediate results, if applicable
+        if self.transfer_intermediate_files:
+            if self.intermediate_transfer_interval == 0 \
+                    or (timezone.now() - self.last_intermediate_transfer).minute > \
+                    self.intermediate_transfer_interval:
+                self.last_intermediate_transfer = timezone.now()
+                thread = threading.Thread(target=self.get_intermediate_results)
+                thread.daemon = True
+                thread.start()
         self.save()
 
     def _process_results(self):
