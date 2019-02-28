@@ -12,6 +12,7 @@ from django.db.models.signals import pre_delete
 from django.dispatch import receiver
 from picklefield import PickledObjectField
 from jinja2 import Template
+from tethys_apps.base.function_extractor import TethysFunctionExtractor
 from uit.exceptions import DpRouteError
 from uit.uit import Client
 from uit.pbs_script import PbsScript, PbsDirective
@@ -55,8 +56,10 @@ class UitPlusJob(PbsScript, TethysJob):
     archive_output_files = PickledObjectField(default=list)
     home_input_files = PickledObjectField(default=list)
     home_output_files = PickledObjectField(default=list)
+    intermediate_transfer_interval = models.IntegerField(default=0, null=False)
     job_id = models.CharField(max_length=1024, null=True)
     job_script = models.TextField(null=False)
+    last_intermediate_transfer = models.DateTimeField(null=True)
     max_cleanup_time = models.DurationField(null=False, default=dt.timedelta(hours=1))
     max_time = models.DurationField(null=False)
     node_type = models.CharField(max_length=10, choices=NODE_TYPE_CHOICES, default='compute', null=False)
@@ -66,10 +69,12 @@ class UitPlusJob(PbsScript, TethysJob):
     queue = models.CharField(max_length=100, default='debug', null=False)
     system = models.CharField(max_length=10, choices=SYSTEM_CHOICES, default='topaz', null=False)
     transfer_input_files = PickledObjectField(default=list)
+    transfer_intermediate_files = PickledObjectField(default=list)
     transfer_job_script = models.BooleanField(default=True)
     transfer_output_files = PickledObjectField(default=list)
     _modules = PickledObjectField(default=dict)
     _optional_directives = PickledObjectField(default=list)
+    _process_intermediate_results_function = models.CharField(max_length=1024, null=True)
     _remote_workspace = models.TextField(blank=True)
     _remote_workspace_id = models.CharField(max_length=100)
 
@@ -153,6 +158,27 @@ class UitPlusJob(PbsScript, TethysJob):
             return os.path.split(self.job_script)[-1]
         except (AttributeError, IndexError):
             return ''
+
+    @property
+    def process_intermediate_results_function(self):
+        """
+        Returns:
+            A function handle or None if function cannot be resolved.
+        """
+        if self._process_intermediate_results_function:
+            function_extractor = TethysFunctionExtractor(
+                self._process_intermediate_results_function, None)
+            if function_extractor.valid:
+                return function_extractor.function
+
+    @process_intermediate_results_function.setter
+    def process_intermediate_results_function(self, function):
+        if isinstance(function, str):
+            self._process_results_function = function
+            return
+        module_path = inspect.getmodule(function).__name__.split('.')
+        module_path.append(function.__name__)
+        self._process_results_function = '.'.join(module_path)
 
     @property
     def remote_workspace_id(self):
