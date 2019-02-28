@@ -499,6 +499,7 @@ def uit_job_pre_delete(sender, instance, using, **kwargs):
 
     """
     try:
+        instance.stop()
         instance.clean()
     except Exception as e:
         log.exception(str(e))
