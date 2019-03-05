@@ -24,8 +24,29 @@ log = logging.getLogger('tethys.' + __name__)
 
 
 class UitPlusJob(PbsScript, TethysJob):
-    """
-    UIT+ Job type.
+    """UIT+ Job type for use in Tethys Apps.
+    
+    Attributes:
+        archive_input_files (list):
+        archive_output_files (list):
+        home_input_files (list):
+        home_output_files (list):
+        intermediate_transfer_interval (int):
+        job_id (str):
+        job_script (str):
+        last_intermediate_transfer (datetime):
+        max_cleanup_time (duration):
+        max_time (duration):
+        node_type (str):
+        num_nodes (int):
+        processes_per_node (int):
+        project_id (str):
+        queue (str):
+        system (str):
+        transfer_input_files (list):
+        transfer_intermediate_files (list):
+        transfer_job_script (bool):
+        transfer_output_files (list):
     """
     UIT_TO_TETHYS_STATUSES = {
         'B': 'RUN',  # Array job: at least one subjob has started
@@ -80,9 +101,7 @@ class UitPlusJob(PbsScript, TethysJob):
     _remote_workspace_id = models.CharField(max_length=100)
 
     def __init__(self, *args, **kwargs):
-        """
-        constructor
-        """
+        """Constructor."""
         # Build kwargs for PbsScript constructor
         pbs_kwargs = {}
 
@@ -117,8 +136,10 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def archive_dir(self):
-        """
-        return the job archive directory from super computer
+        """Get the job archive directory from the HPC.
+        
+        Returns:
+            str: Archive Directory 
         """
         if not getattr(self, '_archive_dir', None):
             archive_home = self.get_environment_variable('ARCHIVE_HOME')
@@ -127,8 +148,10 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def client(self):
-        """
-        returns the uit client based on a valid token
+        """Get the UIT client based on a valid token.
+        
+        Returns:
+            Client: UIT Client object
         """
         if not getattr(self, '_client', None) or self._client is None:
             # Create a client with token
@@ -142,8 +165,10 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def home_dir(self):
-        """
-        returns the job home directory from super computer
+        """Get the job home directory from the HPC.
+        
+        Returns:
+            str: The job home directory
         """
         if not getattr(self, '_home_dir', None):
             home = self.get_environment_variable('HOME')
@@ -152,8 +177,10 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def job_script_name(self):
-        """
-        returns the job_script name.
+        """Get the job_script name.
+        
+        Returns:
+            str: The job script name
         """
         try:
             return os.path.split(self.job_script)[-1]
@@ -162,9 +189,10 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def process_intermediate_results_function(self):
-        """
+        """Get the function used to process intermediate results.
+        
         Returns:
-            A function handle or None if function cannot be resolved.
+            Function: The process function, or None if the function cannot be resolved.
         """
         if self._process_intermediate_results_function:
             function_extractor = TethysFunctionExtractor(
@@ -183,8 +211,10 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def remote_workspace_id(self):
-        """
-        Returns the UUID associated with this job to be used as a workspace io
+        """Get the UUID associated with this job to be used as a workspace id.
+        
+        Returns:
+            str: Remote workspace ID
         """
 
         if not self._remote_workspace_id:
@@ -193,8 +223,12 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def remote_workspace_suffix(self):
-        """
-        returns the job specific suffix
+        """Get the job specific suffix.
+        
+        Made up of a combination of label, name, and remote workspace ID.
+        
+        Returns:
+            str: Suffix
         """
         if not self._remote_workspace:
             workspace_path = os.path.join(self.label, self.name, str(self.remote_workspace_id))
@@ -203,8 +237,10 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def token(self):
-        """
-        returns the user access token.
+        """Get the user access token.
+        
+        Returns:
+            str: Access Token
         """
 
         if not getattr(self, '_token', None) or self._token is None:
@@ -217,8 +253,10 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def work_dir(self):
-        """
-        returns the job work directory from super computer
+        """Get the job work directory from the HPC.
+        
+        Returns:
+            str: Work Directory
         """
         if not getattr(self, '_work_dir', None):
             workdir = self.get_environment_variable('WORKDIR')
@@ -226,10 +264,10 @@ class UitPlusJob(PbsScript, TethysJob):
         return self._work_dir
 
     def get_environment_variable(self, variable):
-        """
-        Get the value of an environment variable.
-        :Args:
-            variable(str): name of environment variable (e.g.: "WORKDIR").
+        """Get the value of an environment variable from the HPC.
+        
+        Args:
+            variable (str): Name of environment variable (e.g.: "WORKDIR").
 
         Returns:
             str: value of environment variable.
@@ -239,9 +277,7 @@ class UitPlusJob(PbsScript, TethysJob):
         return ret.strip()
 
     def _execute(self):
-        """
-        Executes the job using the UIT Plus Python client
-        """
+        """Execute the job using the UIT Plus Python client."""
         # Get client
         client = self.client
 
@@ -323,8 +359,7 @@ class UitPlusJob(PbsScript, TethysJob):
         self.save()
 
     def _parse_status(self, status_string):
-        """
-        Parse status string returned from qstat command.
+        """Parse status string returned from qstat command.
 
         Args:
             status_string(str): stdout from qstat command.
@@ -349,9 +384,9 @@ class UitPlusJob(PbsScript, TethysJob):
             return 'ERR'
 
     def _update_status(self):
-        """
-         Retrieve a job’s status using the UIT Plus Python client.
-         Translate UitJob status to TethysJob status and save in database
+        """Retrieve a job’s status using the UIT Plus Python client.
+        
+        Translates UitJob status to TethysJob status and saves to the database
         """
 
         # Get status using qstat with -H option to get historical data when job finishes.
@@ -391,9 +426,7 @@ class UitPlusJob(PbsScript, TethysJob):
         self.save()
 
     def _process_results(self):
-        """
-         Processes the results using the UIT Plus Python client
-        """
+        """Process the results using the UIT Plus Python client."""
         remote_dir = os.path.join(self.home_dir, 'transfer')
         self.get_remote_files(remote_dir, self.transfer_output_files)
         self.get_remote_files(remote_dir, ["log.stdout", "log.stderr"])
@@ -409,19 +442,14 @@ class UitPlusJob(PbsScript, TethysJob):
                 self.process_intermediate_results_function()
 
     def get_remote_files(self, remote_dir, remote_filenames):
-        """
-        Transfers files from job_home_dir using the client.get_file method
+        """Transfer files from job_home_dir using the client.get_file method.
 
-        Parameters
-        ----------
-        remote_dir: str
-            the remote directory from which to pull files
-        remote_filenames: List[str]
-            list of file names to retrieve from remote_dir
+        Args:
+            remote_dir (str): Remote directory from which to pull files
+        remote_filenames (List[str]): File names to retrieve from remote_dir
 
-        Return
-        -------
-        Returns True if all file transfers succeed.
+        Returns:
+            Bool: True if all file transfers succeed.
         """
 
         # Ensure the local transfer directory exists
@@ -444,8 +472,10 @@ class UitPlusJob(PbsScript, TethysJob):
         return success
 
     def stop(self):
-        """
-        Stops/cancels a job using the UIT Plus Python client
+        """Stops/cancels a job using the UIT Plus Python client.
+        
+        Returns:
+            Bool: True if job was deleted.
         """
         # delete the job
         pbs_command = 'qdel ' + self.job_id
@@ -456,8 +486,10 @@ class UitPlusJob(PbsScript, TethysJob):
             return False
 
     def pause(self):
-        """
-        Pauses a job using the UIT Plus Python client
+        """Pauses a job using the UIT Plus Python client.
+        
+        Returns:
+            Bool: True if job was paused.
         """
         # hold the job
         pbs_command = 'qhold ' + self.job_id
@@ -468,8 +500,10 @@ class UitPlusJob(PbsScript, TethysJob):
             return False
 
     def resume(self):
-        """
-        Resumes a paused job using the UIT Plus Python client
+        """Resumes a paused job using the UIT Plus Python client.
+        
+        Returns:
+            Bool: True if job was resumed.
         """
         # resume the job
         pbs_command = 'qrls ' + self.job_id
@@ -480,8 +514,17 @@ class UitPlusJob(PbsScript, TethysJob):
             return False
 
     def clean(self, archive=False):
-        """
-        Remove all files and directories associated with the job
+        """Remove all files and directories associated with the job.
+        
+        Removal takes place on unmonitored background threads so as not to disturb the user 
+        (as deletes on the HPC can take a long time). This means that we will always return True even if
+        the files were not deleted.
+        
+        Args:
+            archive (bool): Flag to indicate whether files should be removed from the archive as well.
+        
+        Returns:
+            Bool: True. Always.
         """
 
         # Remove local workspace
@@ -509,18 +552,13 @@ class UitPlusJob(PbsScript, TethysJob):
 
 @receiver(pre_delete, sender=UitPlusJob)
 def uit_job_pre_delete(sender, instance, using, **kwargs):
-    """
-    Pre-delete hook to make sure we clean up our workspace
+    """Pre-delete hook to make sure we clean up our workspace.
 
     Args:
         sender: The model's class
         instance: The instance being deleted
         using: The DB alias in use
         **kwargs:
-
-    Returns:
-        Nothing
-
     """
     try:
         instance.stop()
