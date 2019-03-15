@@ -23,7 +23,7 @@ archive ls {{ job_archive_dir }}
 {% endif %}
 
 {# HOME OUTPUT FILES #}
-{% if home_output_files%}
+{% if home_output_files %}
 # make dir
 mkdir -p {{ job_home_dir }}
 
@@ -34,7 +34,7 @@ cp {{ home_output_file }} {{ job_home_dir }}
 {% endif %}
 
 {# TRANSFER OUTPUT FILES #}
-{% if transfer_output_files%}
+{% if transfer_output_files %}
 # make transfer directory in job home
 mkdir -p {{ job_home_dir }}/transfer
 
