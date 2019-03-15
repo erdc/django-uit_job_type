@@ -28,27 +28,27 @@ class UitPlusJob(PbsScript, TethysJob):
     """UIT+ Job type for use in Tethys Apps.
 
     Attributes:
-        archive_input_files (list):
-        archive_output_files (list):
-        home_input_files (list):
-        home_output_files (list):
-        intermediate_transfer_interval (int):
-        job_id (str):
-        job_script (str):
-        last_intermediate_transfer (datetime):
-        max_cleanup_time (duration):
-        max_time (duration):
-        node_type (str):
-        num_nodes (int):
-        processes_per_node (int):
-        project_id (str):
-        queue (str):
-        system (str):
-        transfer_input_files (list):
-        transfer_intermediate_files (list):
-        transfer_job_script (bool):
-        transfer_output_files (list):
-    """
+        archive_input_files (list): files to transfer from the archive filesystem to the working directory prior to running the job.
+        archive_output_files (list): files to transfer from the working directory to the archive filesystem after the job has finished running.
+        home_input_files (list): files to transfer from the user's home directory to the working directory prior to running the job.
+        home_output_files (list): files to transfer from the working directory to the user's home directory after the job has finished running.
+        intermediate_transfer_interval (int): frequency in minutes to transfer intermediate results.
+        job_id (str): id of the job assigned by PBS.
+        job_script (str): path to PBS script for the job.
+        last_intermediate_transfer (datetime): the last date and time an intermediate data transfer occurred.
+        max_cleanup_time (duration): maximum amount of time in minutes the cleanup job should be allowed to run.
+        max_time (duration): maximum amount of time in minutes the job should be allowed to run.
+        node_type (str): type of node on which the job should run.
+        num_nodes (int): number of nodes to request.
+        processes_per_node (int): number of processors per node to request.
+        project_id (str): project ID to be passed in the PBS Header.
+        queue (str): name of the queue into which to submit the job.
+        system (str): name of the system to run on.
+        transfer_input_files (list): files to transfer from the job workspace in the app to the working directory prior to running the job.
+        transfer_intermediate_files (list): files to transfer to the job workspace in the app each intermediate_transfer_interval
+        transfer_job_script (bool): transfer the job_script from the app to the working directory when True. Defaults to True.
+        transfer_output_files (list): files to transfer from the working directory to the job workspace in the app after the job has finished running
+    """  # noqa: E501
     UIT_TO_TETHYS_STATUSES = {
         'B': 'RUN',  # Array job: at least one subjob has started
         'E': 'COM',  # Job is exiting after having run.
@@ -388,7 +388,6 @@ class UitPlusJob(PbsScript, TethysJob):
 
         Translates UitJob status to TethysJob status and saves to the database
         """
-
         # Get status using qstat with -H option to get historical data when job finishes.
         try:
             pbs_command = 'qstat -H ' + self.job_id
@@ -432,24 +431,20 @@ class UitPlusJob(PbsScript, TethysJob):
         self.get_remote_files(remote_dir, ["log.stdout", "log.stderr"])
 
     def get_intermediate_results(self):
-        """Retrieve intermediate result files from the supercomputer.
-
-        Returns:
-            Nothing
-        """
+        """Retrieve intermediate result files from the supercomputer."""
         if self.get_remote_files(self.work_dir, self.transfer_intermediate_files):
             if self.process_intermediate_results_function:
                 self.process_intermediate_results_function()
 
     def get_remote_files(self, remote_dir, remote_filenames):
-        """Transfer files from job_home_dir using the client.get_file method.
+        """Transfer files from a directory on the super computer.
 
         Args:
             remote_dir (str): Remote directory from which to pull files
-        remote_filenames (List[str]): File names to retrieve from remote_dir
+            remote_filenames (List[str]): Files to retrieve from remote_dir
 
         Returns:
-            Bool: True if all file transfers succeed.
+            bool: True if all file transfers succeed.
         """
 
         # Ensure the local transfer directory exists
@@ -472,10 +467,10 @@ class UitPlusJob(PbsScript, TethysJob):
         return success
 
     def stop(self):
-        """Stops/cancels a job using the UIT Plus Python client.
+        """Stops/cancels this job.
 
         Returns:
-            Bool: True if job was deleted.
+            bool: True if job was deleted.
         """
         # delete the job
         pbs_command = 'qdel ' + self.job_id
@@ -486,10 +481,10 @@ class UitPlusJob(PbsScript, TethysJob):
             return False
 
     def pause(self):
-        """Pauses a job using the UIT Plus Python client.
+        """Pauses this job.
 
         Returns:
-            Bool: True if job was paused.
+            bool: True if job was paused.
         """
         # hold the job
         pbs_command = 'qhold ' + self.job_id
@@ -500,10 +495,10 @@ class UitPlusJob(PbsScript, TethysJob):
             return False
 
     def resume(self):
-        """Resumes a paused job using the UIT Plus Python client.
+        """Resumes this job if paused.
 
         Returns:
-            Bool: True if job was resumed.
+            bool: True if job was resumed.
         """
         # resume the job
         pbs_command = 'qrls ' + self.job_id
@@ -516,13 +511,13 @@ class UitPlusJob(PbsScript, TethysJob):
     def clean(self, archive=False):
         """Remove all files and directories associated with the job.
 
-        Removal takes place on unmonitored background threads so as not to disturb the user (as deletes on the HPC can take a long time). This means that we will always return True even if the files were not deleted.
+        Removal takes place on unmonitored background thread so as not to disturb the user (as deletes on the HPC can take a long time). This means that we will always return True even if the files were not deleted.
 
         Args:
             archive (bool): Flag to indicate whether files should be removed from the archive as well.
 
         Returns:
-            Bool: True. Always.
+            bool: True. Always.
         """  # noqa: E501
 
         # Remove local workspace

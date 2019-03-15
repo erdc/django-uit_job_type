@@ -39,7 +39,7 @@ class UitPlusOAuth2(BaseOAuth2):
 
     def get_user_details(self, response):
         """
-        Return user details from HPC account.
+        Extract HPC account details from the given API response.
         """
         # Build user details from HPC username
         hpc_username = response.get('USERNAME', None)
