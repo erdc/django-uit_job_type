@@ -21,7 +21,7 @@
     )
     ```
     
-1. Register a new client on https://www.uitplus.hpc.mil. Set `Return URL` to `http://<yoursite>/oauth2/complete/UITPlus/`.
+1. Register a new client on https://www.uitplus.hpc.mil. Set `Return URL` to `http(s)://<yourtethysportal>/oauth2/complete/UITPlus/`.
 
 1. Add the generated client id and client secret to ``settings.py``:
 
@@ -39,15 +39,16 @@
 1. Install DOD Certificates:
 
     ```bash
-    # TODO
     Option 1. Install certs in system/with Conda and set environment variable to tell Python requests module to use the system certs instead of the built-in certs file: 
        export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt.
     
     Option 2. Append DOD certs to site-packages/certifi/cacert.pem
+    
+    Option 3. Use the cert conda package that Kevin is building (preferred)
     ```
 
 ## Tests
 
 ```bash
-# TODO
+. test.sh <path_to_tethys_manage.py>
 ```
