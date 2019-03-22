@@ -1,0 +1,50 @@
+# Build and Test Tethys Platform on Travis
+language: python
+  - "2.7"
+  - "3.6"
+
+# Setting sudo to false opts in to Travis-CI container-based builds.
+sudo: false
+
+# Turn off email notifications
+notifications:
+  email: false
+
+before_install:
+  - sudo apt-get update
+
+os:
+  - linux
+
+install:
+  - git clone -b uit-job-type https://github.com/Aquaveo/tethys.git $HOME/tethys/src
+  - bash $HOME/tethys/src/scripts/install_tethys.sh -h
+  - bash $HOME/tethys/src/scripts/install_tethys.sh --partial-tethys-install mesdat -t $HOME/tethys
+
+  # activate conda environment
+  - export PATH="$HOME/tethys/miniconda/bin:$PATH"
+  - source activate tethys
+  - conda config --set always_yes yes
+  - conda install flake8
+  - conda list
+
+  # start database server
+  - pg_ctl -U postgres -D "${TETHYS_DB_DIR}/data" -l "${TETHYS_DB_DIR}/logfile" start -o "-p ${TETHYS_DB_PORT}"
+
+  # generate new settings.py file with tethys_super user for tests
+  - rm $HOME/tethys/src/tethys_portal/settings.py
+  - tethys gen settings --db-username tethys_super --db-password pass --db-port ${TETHYS_DB_PORT}
+
+  # Install UIT
+  - git clone https://github.com/erdc/pyuit.git $HOME/pyuit
+  - pip install -e $HOME/pyuit
+
+  - pip install -e .
+
+# command to run tests
+script:
+  - bash -x test.sh 
+
+# generate test coverage information
+after_success:
+  - ls -al
