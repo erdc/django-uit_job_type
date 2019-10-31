@@ -133,6 +133,12 @@ class UitPlusJob(PbsScript, TethysJob):
 
         TethysJob.__init__(self, *args, **kwargs)
 
+        self._client = None
+        self._home_dir = None
+        self._token = None
+        self._archive_dir = None
+        self._work_dir = None
+
         self.save()
 
     @property
@@ -142,7 +148,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             str: Archive Directory
         """
-        if not getattr(self, '_archive_dir', None):
+        if self._archive_dir is None:
             archive_home = self.get_environment_variable('ARCHIVE_HOME')
             self._archive_dir = os.path.join(archive_home, self.remote_workspace_suffix)
         return self._archive_dir
@@ -154,7 +160,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             Client: UIT Client object
         """
-        if not getattr(self, '_client', None) or self._client is None:
+        if self._client is None:
             # Create a client with token
             self._client = Client(token=self.token)
 
@@ -171,7 +177,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             str: The job home directory
         """
-        if not getattr(self, '_home_dir', None):
+        if self._home_dir is None:
             home = self.get_environment_variable('HOME')
             self._home_dir = os.path.join(home, self.remote_workspace_suffix)
         return self._home_dir
@@ -243,7 +249,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             str: Access Token
         """
-        if not getattr(self, '_token', None) or self._token is None:
+        if self._token is None:
             try:
                 social = self.user.social_auth.get(provider='UITPlus')
                 self._token = social.extra_data['access_token']
@@ -258,7 +264,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             str: Work Directory
         """
-        if not getattr(self, '_work_dir', None):
+        if self._work_dir is None:
             workdir = self.get_environment_variable('WORKDIR')
             self._work_dir = os.path.join(workdir, self.remote_workspace_suffix)
         return self._work_dir
@@ -272,9 +278,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             str: value of environment variable.
         """
-        command = 'echo ${}'.format(variable)
-        ret = self.client.call(command=command, work_dir='/tmp')
-        return ret.strip()
+        return self.client.env.get(variable)
 
     def _execute(self):
         """Execute the job using the UIT Plus Python client."""
@@ -284,7 +288,7 @@ class UitPlusJob(PbsScript, TethysJob):
         # Setup working directory on supercomputer
         command = 'mkdir -p ' + self.work_dir
         try:
-            self.client.call(command=command, work_dir='/tmp')
+            self.client.call(command=command, working_dir='/tmp')
         except RuntimeError as e:
             self._status = 'ERR'
             self.save()
@@ -391,7 +395,7 @@ class UitPlusJob(PbsScript, TethysJob):
         # Get status using qstat with -H option to get historical data when job finishes.
         try:
             pbs_command = 'qstat -H ' + self.job_id
-            status_string = self.client.call(command=pbs_command, work_dir='/tmp')
+            status_string = self.client.call(command=pbs_command, working_dir='/tmp')
         except DpRouteError as e:
             log.info('Ignoring DP_Route error: {}'.format(e))
             return
@@ -475,7 +479,7 @@ class UitPlusJob(PbsScript, TethysJob):
         # delete the job
         pbs_command = 'qdel ' + self.job_id
         try:
-            self.client.call(command=pbs_command, work_dir=self.work_dir)
+            self.client.call(command=pbs_command, working_dir=self.work_dir)
             return True
         except RuntimeError:
             return False
@@ -489,7 +493,7 @@ class UitPlusJob(PbsScript, TethysJob):
         # hold the job
         pbs_command = 'qhold ' + self.job_id
         try:
-            self.client.call(command=pbs_command, work_dir=self.work_dir)
+            self.client.call(command=pbs_command, working_dir=self.work_dir)
             return True
         except RuntimeError:
             return False
@@ -503,7 +507,7 @@ class UitPlusJob(PbsScript, TethysJob):
         # resume the job
         pbs_command = 'qrls ' + self.job_id
         try:
-            self.client.call(command=pbs_command, work_dir=self.work_dir)
+            self.client.call(command=pbs_command, working_dir=self.work_dir)
             return True
         except RuntimeError:
             return False

@@ -2,11 +2,17 @@
 
 ## Installation
 
+1. Conda install `pyuit`.
+
+  ```bash
+  conda install -c erdc/label/dev -c conda-forge pyuit
+  ```
+  
 1. Install the extension.
     
     ```bash
     cd django-uit_plus_job
-    python setup.py install
+    python pip install -e .
     ```
     
 1. Add `"uit_plus_job"` to `INSTALLED_APPS` in `settings.py`.
@@ -33,18 +39,7 @@
 1. Run migrations:
 
     ```bash
-    tethys manage syncdb
-    ```
-
-1. Install DOD Certificates:
-
-    ```bash
-    Option 1. Install certs in system/with Conda and set environment variable to tell Python requests module to use the system certs instead of the built-in certs file: 
-       export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt.
-    
-    Option 2. Append DOD certs to site-packages/certifi/cacert.pem
-    
-    Option 3. Use the cert conda package that Kevin is building (preferred)
+    tethys db migrate
     ```
 
 ## Tests
