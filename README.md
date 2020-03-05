@@ -29,8 +29,8 @@
     - uit_plus_job.oauth2.UitPlusOAuth2
   
   OAUTH_CONFIGS:
-    - SOCIAL_AUTH_UITPLUS_KEY: <client-id>
-    - SOCIAL_AUTH_UITPLUS_SECRET: <client-secret>
+    SOCIAL_AUTH_UITPLUS_KEY: <client-id>
+    SOCIAL_AUTH_UITPLUS_SECRET: <client-secret>
   ```
 
 1. Run migrations:
