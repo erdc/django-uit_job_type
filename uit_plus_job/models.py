@@ -149,7 +149,6 @@ class UitPlusJob(PbsScript, TethysJob):
             user=user,
             label=job.label,
             workspace=workspace,  # TODO
-            job_type=cls,
 
             project_id=script.project_id,
             system=script.system,
@@ -175,6 +174,7 @@ class UitPlusJob(PbsScript, TethysJob):
         )
         instance._array_indices = script._array_indices
         instance._environment_variables = script._environment_variables
+        return instance
 
     @property
     def pbs_job(self):
