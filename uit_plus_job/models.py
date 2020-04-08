@@ -483,9 +483,7 @@ class UitPlusJob(PbsScript, TethysJob):
         rm_cmd = "rm -rf {} || true"
         commands = []
         for path in (self.working_dir, self.home_dir):
-            # TODO: We should probably change this to figure out the actual remote workspace path, instead of
-            #  assuming it is one above our work/home path.
-            commands.append(rm_cmd.format(os.path.abspath(os.path.join(path, '..'))))
+            commands.append(rm_cmd.format(path))
         if archive:
             commands.append("archive rm -rf {} || true".format(self.archive_dir))
 
@@ -509,6 +507,10 @@ def uit_job_pre_delete(sender, instance, using, **kwargs):
     """
     try:
         instance.stop()
-        instance.clean()
+        try:
+            if instance.clean_on_delete:
+                instance.clean()
+        except AttributeError:
+            instance.clean()
     except Exception as e:
         log.exception(str(e))
