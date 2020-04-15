@@ -10,13 +10,12 @@ from django.db import models
 from django.db.models.signals import pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
-from picklefield import PickledObjectField
+from django.contrib.postgres.fields import ArrayField, JSONField
 from tethys_apps.base.function_extractor import TethysFunctionExtractor
 from uit.exceptions import DpRouteError
 from uit import Client, PbsScript, PbsJob, PbsArrayJob
 from uit.pbs_script import NODE_TYPES
 from tethys_compute.models.tethys_job import TethysJob
-from uit_plus_job.util import strfdelta
 
 
 log = logging.getLogger('tethys.' + __name__)
@@ -48,6 +47,7 @@ class UitPlusJob(PbsScript, TethysJob):
         transfer_output_files (list): files to transfer from the working directory to the job workspace in the app after the job has finished running
     """  # noqa: E501
     UIT_TO_TETHYS_STATUSES = {
+        None: 'PEN',  # No status set so job was just created
         'B': 'RUN',  # Array job: at least one subjob has started
         'E': 'COM',  # Job is exiting after having run.
         'F': 'COM',  # Job is finished.
@@ -68,9 +68,9 @@ class UitPlusJob(PbsScript, TethysJob):
 
     # job vars
     job_id = models.CharField(max_length=1024, null=True)
-    archive_input_files = PickledObjectField(default=list)
-    home_input_files = PickledObjectField(default=list)
-    transfer_input_files = PickledObjectField(default=list)
+    archive_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    home_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    transfer_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
 
     # pbs_script vars
     project_id = models.CharField(max_length=1024, null=False)
@@ -83,20 +83,23 @@ class UitPlusJob(PbsScript, TethysJob):
     execution_block = models.TextField(null=False)
 
     # other
-    archive_output_files = PickledObjectField(default=list)
-    home_output_files = PickledObjectField(default=list)
+    archive_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    home_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     intermediate_transfer_interval = models.IntegerField(default=0, null=False)
     last_intermediate_transfer = models.DateTimeField(null=False, default=timezone.now)
     max_cleanup_time = models.DurationField(null=False, default=dt.timedelta(hours=1))
-    transfer_intermediate_files = PickledObjectField(default=list)
+    transfer_intermediate_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     transfer_job_script = models.BooleanField(default=True)
-    transfer_output_files = PickledObjectField(default=list)
-    _modules = PickledObjectField(default=dict)
-    _optional_directives = PickledObjectField(default=list)
+    transfer_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    _modules = JSONField(null=True)
+    _optional_directives = ArrayField(models.CharField(max_length=2048, null=True))
     _process_intermediate_results_function = models.CharField(max_length=1024, null=True)
     _remote_workspace = models.TextField(blank=True)
     _remote_workspace_id = models.CharField(max_length=100)
-    # TODO add _environment_variables to DB
+    _environment_variables = JSONField(null=True)
+    _array_indices = ArrayField(models.IntegerField(), null=True)
+
+    _update_status_interval = dt.timedelta(seconds=30)  # This is not effective until jobs table uses WS
 
     def __init__(self, *args, **kwargs):
         """Constructor."""
@@ -150,6 +153,8 @@ class UitPlusJob(PbsScript, TethysJob):
             label=job.label,
             workspace=workspace,  # TODO
 
+            job_id=job.job_id,
+            _status=cls.UIT_TO_TETHYS_STATUSES.get(job.status),
             project_id=script.project_id,
             system=script.system,
             node_type=script.node_type,
@@ -158,8 +163,10 @@ class UitPlusJob(PbsScript, TethysJob):
             queue=script.queue,
             max_time=script.max_time,
             execution_block=script.execution_block,
+            _optional_directives=script._optional_directives,
             _modules=script._modules,
-            # _environment_variables=None,  # TODO
+            _environment_variables=script._environment_variables,
+            _array_indices=script._array_indices,
 
             # max_cleanup_time=None,
             home_input_files=job.home_input_files,
@@ -172,14 +179,13 @@ class UitPlusJob(PbsScript, TethysJob):
             _remote_workspace_id=job._remote_workspace_id,
             _remote_workspace=job._remote_workspace,
         )
-        instance._array_indices = script._array_indices
-        instance._environment_variables = script._environment_variables
+
         return instance
 
     @property
     def pbs_job(self):
         if self._pbs_job is None:
-            Job = PbsJob if self._array_indices is None else PbsArrayJob
+            Job = PbsJob if not self._array_indices else PbsArrayJob
             j = Job(
                 script=self,
                 client=self.client,
