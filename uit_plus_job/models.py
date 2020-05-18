@@ -433,7 +433,7 @@ class UitPlusJob(PbsScript, TethysJob):
             bool: True if job was deleted.
         """
         # delete the job
-        pbs_command = 'qdel ' + self.job_id
+        pbs_command = f'qdel {self.job_id}'
         try:
             self.client.call(command=pbs_command, working_dir=self.working_dir)
             return True
@@ -447,7 +447,7 @@ class UitPlusJob(PbsScript, TethysJob):
             bool: True if job was paused.
         """
         # hold the job
-        pbs_command = 'qhold ' + self.job_id
+        pbs_command = f'qhold {self.job_id}'
         try:
             self.client.call(command=pbs_command, working_dir=self.working_dir)
             return True
@@ -461,7 +461,7 @@ class UitPlusJob(PbsScript, TethysJob):
             bool: True if job was resumed.
         """
         # resume the job
-        pbs_command = 'qrls ' + self.job_id
+        pbs_command = f'qrls {self.job_id}'
         try:
             self.client.call(command=pbs_command, working_dir=self.working_dir)
             return True
