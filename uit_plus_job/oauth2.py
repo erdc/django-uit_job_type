@@ -7,6 +7,7 @@
 ********************************************************************************
 """
 from social_core.backends.oauth import BaseOAuth2
+from uit.uit import DEFAULT_CA_FILE
 
 
 class UitPlusOAuth2(BaseOAuth2):
@@ -76,3 +77,6 @@ class UitPlusOAuth2(BaseOAuth2):
         except Exception:
             # Return the get token response if errors occur
             return response
+
+    def request(self, url, method='GET', *args, **kwargs):
+        return super().request(url=url, method=method, verify=DEFAULT_CA_FILE, *args, **kwargs)

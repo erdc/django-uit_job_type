@@ -2,7 +2,6 @@
 import os
 import shutil
 import threading
-import uuid
 import inspect
 import logging
 import datetime as dt
@@ -11,14 +10,12 @@ from django.db import models
 from django.db.models.signals import pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
-from picklefield import PickledObjectField
-from jinja2 import Template
+from django.contrib.postgres.fields import ArrayField, JSONField
 from tethys_apps.base.function_extractor import TethysFunctionExtractor
 from uit.exceptions import DpRouteError
-from uit.uit import Client
-from uit.pbs_script import PbsScript
+from uit import Client, PbsScript, PbsJob, PbsArrayJob
+from uit.pbs_script import NODE_TYPES
 from tethys_compute.models.tethys_job import TethysJob
-from uit_plus_job.util import strfdelta
 
 
 log = logging.getLogger('tethys.' + __name__)
@@ -50,6 +47,7 @@ class UitPlusJob(PbsScript, TethysJob):
         transfer_output_files (list): files to transfer from the working directory to the job workspace in the app after the job has finished running
     """  # noqa: E501
     UIT_TO_TETHYS_STATUSES = {
+        None: 'PEN',  # No status set so job was just created
         'B': 'RUN',  # Array job: at least one subjob has started
         'E': 'COM',  # Job is exiting after having run.
         'F': 'COM',  # Job is finished.
@@ -64,42 +62,44 @@ class UitPlusJob(PbsScript, TethysJob):
         'X': 'RUN',  # Subjob has completed execution or has been deleted.
     }
 
-    SYSTEM_CHOICES = (
-        ('topaz', 'topaz'),
-        ('onyx', 'onyx'),
-    )
+    SYSTEM_CHOICES = [(s, s) for s in NODE_TYPES.keys()]
 
-    NODE_TYPE_CHOICES = (
-        ('compute', 'compute'),
-        ('gpu', 'gpu'),
-        ('bigmem', 'bigmem'),
-    )
+    NODE_TYPE_CHOICES = [(nt, nt) for nt in {nt for s in NODE_TYPES.values() for nt in s.keys()}]
 
-    archive_input_files = PickledObjectField(default=list)
-    archive_output_files = PickledObjectField(default=list)
-    home_input_files = PickledObjectField(default=list)
-    home_output_files = PickledObjectField(default=list)
-    intermediate_transfer_interval = models.IntegerField(default=0, null=False)
+    # job vars
     job_id = models.CharField(max_length=1024, null=True)
-    job_script = models.TextField(null=False)
-    last_intermediate_transfer = models.DateTimeField(null=False, default=timezone.now)
-    max_cleanup_time = models.DurationField(null=False, default=dt.timedelta(hours=1))
-    max_time = models.DurationField(null=False)
-    node_type = models.CharField(max_length=10, choices=NODE_TYPE_CHOICES, default='compute', null=False)
+    archive_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    home_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    transfer_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+
+    # pbs_script vars
+    project_id = models.CharField(max_length=1024, null=False)
     num_nodes = models.IntegerField(default=1, null=False)
     processes_per_node = models.IntegerField(default=1, null=False)
-    project_id = models.CharField(max_length=1024, null=False)
+    max_time = models.DurationField(null=False)
     queue = models.CharField(max_length=100, default='debug', null=False)
-    system = models.CharField(max_length=10, choices=SYSTEM_CHOICES, default='topaz', null=False)
-    transfer_input_files = PickledObjectField(default=list)
-    transfer_intermediate_files = PickledObjectField(default=list)
+    node_type = models.CharField(max_length=10, choices=NODE_TYPE_CHOICES, default='compute', null=False)
+    system = models.CharField(max_length=10, choices=SYSTEM_CHOICES, default='onyx', null=False)
+    execution_block = models.TextField(null=False)
+
+    # other
+    archive_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    home_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    intermediate_transfer_interval = models.IntegerField(default=0, null=False)
+    last_intermediate_transfer = models.DateTimeField(null=False, default=timezone.now)
+    max_cleanup_time = models.DurationField(null=False, default=dt.timedelta(hours=1))
+    transfer_intermediate_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     transfer_job_script = models.BooleanField(default=True)
-    transfer_output_files = PickledObjectField(default=list)
-    _modules = PickledObjectField(default=dict)
-    _optional_directives = PickledObjectField(default=list)
+    transfer_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    _modules = JSONField(null=True)
+    _optional_directives = ArrayField(models.CharField(max_length=2048, null=True))
     _process_intermediate_results_function = models.CharField(max_length=1024, null=True)
     _remote_workspace = models.TextField(blank=True)
     _remote_workspace_id = models.CharField(max_length=100)
+    _environment_variables = JSONField(null=True)
+    _array_indices = ArrayField(models.IntegerField(), null=True)
+
+    _update_status_interval = dt.timedelta(seconds=30)  # This is not effective until jobs table uses WS
 
     def __init__(self, *args, **kwargs):
         """Constructor."""
@@ -133,7 +133,73 @@ class UitPlusJob(PbsScript, TethysJob):
 
         TethysJob.__init__(self, *args, **kwargs)
 
+        self._client = None
+        self._token = None
+        self._home_dir = None
+        self._archive_dir = None
+        self._working_dir = None
+        self._pbs_job = None
+
+        self.remote_workspace_suffix  # initialize "remote" variables
+
         self.save()
+
+    @classmethod
+    def instance_from_pbs_job(cls, job, user, workspace):
+        script = job.script
+        instance = cls(
+            name=job.name,
+            user=user,
+            label=job.label,
+            workspace=workspace,  # TODO
+
+            job_id=job.job_id,
+            _status=cls.UIT_TO_TETHYS_STATUSES.get(job.status),
+            project_id=script.project_id,
+            system=script.system,
+            node_type=script.node_type,
+            num_nodes=script.num_nodes,
+            processes_per_node=script.processes_per_node,
+            queue=script.queue,
+            max_time=script.max_time,
+            execution_block=script.execution_block,
+            _optional_directives=script._optional_directives,
+            _modules=script._modules,
+            _environment_variables=script._environment_variables,
+            _array_indices=script._array_indices,
+
+            # max_cleanup_time=None,
+            home_input_files=job.home_input_files,
+            home_output_files=[],
+            archive_input_files=job.archive_input_files,
+            archive_output_files=[],
+            transfer_input_files=job.transfer_input_files,
+            transfer_intermediate_files=[],
+            transfer_output_files=[],
+            _remote_workspace_id=job._remote_workspace_id,
+            _remote_workspace=job._remote_workspace,
+        )
+
+        return instance
+
+    @property
+    def pbs_job(self):
+        if self._pbs_job is None:
+            Job = PbsJob if not self._array_indices else PbsArrayJob
+            j = Job(
+                script=self,
+                client=self.client,
+                label=self.label,
+                transfer_input_files=self.transfer_input_files,
+                home_input_files=self.home_input_files,
+                archive_input_files=self.archive_input_files,
+            )
+            j._remote_workspace_id = self._remote_workspace_id
+            j._remote_workspace = self._remote_workspace
+            j._job_id = self.job_id
+            j._status = self._status
+            self._pbs_job = j
+        return self._pbs_job
 
     @property
     def archive_dir(self):
@@ -142,7 +208,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             str: Archive Directory
         """
-        if not getattr(self, '_archive_dir', None):
+        if self._archive_dir is None:
             archive_home = self.get_environment_variable('ARCHIVE_HOME')
             self._archive_dir = os.path.join(archive_home, self.remote_workspace_suffix)
         return self._archive_dir
@@ -154,7 +220,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             Client: UIT Client object
         """
-        if not getattr(self, '_client', None) or self._client is None:
+        if self._client is None:
             # Create a client with token
             self._client = Client(token=self.token)
 
@@ -171,22 +237,9 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             str: The job home directory
         """
-        if not getattr(self, '_home_dir', None):
-            home = self.get_environment_variable('HOME')
-            self._home_dir = os.path.join(home, self.remote_workspace_suffix)
+        if self._home_dir is None:
+            self._home_dir = os.path.join(self.client.HOME, self.remote_workspace_suffix)
         return self._home_dir
-
-    @property
-    def job_script_name(self):
-        """Get the job_script name.
-
-        Returns:
-            str: The job script name
-        """
-        try:
-            return os.path.split(self.job_script)[-1]
-        except (AttributeError, IndexError):
-            return ''
 
     @property
     def process_intermediate_results_function(self):
@@ -217,10 +270,10 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             str: Remote workspace ID
         """
-
         if not self._remote_workspace_id:
-            self._remote_workspace_id = str(uuid.uuid4())
+            self._remote_workspace_id = self.pbs_job.remote_workspace_id
         return self._remote_workspace_id
+
 
     @property
     def remote_workspace_suffix(self):
@@ -232,8 +285,7 @@ class UitPlusJob(PbsScript, TethysJob):
             str: Suffix
         """
         if not self._remote_workspace:
-            workspace_path = os.path.join(self.label, self.name, str(self.remote_workspace_id))
-            self._remote_workspace = workspace_path
+            self._remote_workspace = self.pbs_job.remote_workspace_suffix
         return self._remote_workspace
 
     @property
@@ -243,7 +295,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             str: Access Token
         """
-        if not getattr(self, '_token', None) or self._token is None:
+        if self._token is None:
             try:
                 social = self.user.social_auth.get(provider='UITPlus')
                 self._token = social.extra_data['access_token']
@@ -252,16 +304,13 @@ class UitPlusJob(PbsScript, TethysJob):
         return self._token
 
     @property
-    def work_dir(self):
+    def working_dir(self):
         """Get the job work directory from the HPC.
 
         Returns:
             str: Work Directory
         """
-        if not getattr(self, '_work_dir', None):
-            workdir = self.get_environment_variable('WORKDIR')
-            self._work_dir = os.path.join(workdir, self.remote_workspace_suffix)
-        return self._work_dir
+        return self.pbs_job.working_dir
 
     def get_environment_variable(self, variable):
         """Get the value of an environment variable from the HPC.
@@ -272,126 +321,31 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             str: value of environment variable.
         """
-        command = 'echo ${}'.format(variable)
-        ret = self.client.call(command=command, work_dir='/tmp')
-        return ret.strip()
+        return self.client.env.get(variable)
 
-    def _execute(self):
+    def _execute(self, remote_name=None):
         """Execute the job using the UIT Plus Python client."""
-        # Get client
-        client = self.client
-
-        # Setup working directory on supercomputer
-        command = 'mkdir -p ' + self.work_dir
         try:
-            self.client.call(command=command, work_dir='/tmp')
+            # Submit job with PbsScript object and remote workspace
+            self.job_id = self.pbs_job.submit(self, remote_name=remote_name)
         except RuntimeError as e:
             self._status = 'ERR'
             self.save()
-            raise RuntimeError('Error setting up job directory on "{}": {}'.format(self.system, str(e)))
+            raise RuntimeError('Error submitting job on "{}": {}'.format(self.system, str(e)))
 
-        # Transfer any files listed in transfer_input_files to work_dir on supercomputer
-        for transfer_file in self.transfer_input_files:
-            transfer_file_name = os.path.split(transfer_file)[-1]
-            remote_path = os.path.join(self.work_dir, transfer_file_name)
-            ret = self.client.put_file(local_path=transfer_file, remote_path=remote_path)
-
-            if 'success' in ret and ret['success'] == 'false':
-                self._status = 'ERR'
-                self.save()
-                raise RuntimeError('Failed to transfer input files: {}'.format(ret['error']))
-
-        # Transfer the job_script to the work_dir on supercomputer
-        if self.transfer_job_script:
-            remote_path = os.path.join(self.work_dir, self.job_script_name)
-            ret = self.client.put_file(local_path=self.job_script, remote_path=remote_path)
-
-            if 'success' in ret and ret['success'] == 'false':
-                self._status = 'ERR'
-                self.save()
-                raise RuntimeError('Failed to transfer the job script: {}'.format(ret['error']))
-
-        # Render the execution block
-        context = {
-            'job_work_dir': self.work_dir,
-            'job_archive_dir': self.archive_dir,
-            'job_home_dir': self.home_dir,
-            'home_input_files': self.home_input_files,
-            'archive_input_files': self.archive_input_files,
-            'executable': self.job_script_name,
-            'project_id': self.project_id,
-        }
-
-        resources_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uit_plus_job', 'resources')
-        execution_block_path = os.path.join(resources_dir, 'executionblock.sh')
-
-        with open(execution_block_path, 'r') as f:
-            text = f.read()
-            template = Template(text)
-            self.execution_block = template.render(context)
-
-        # Submit job with PbsScript object and remote workspace
-        execute_job_id = client.submit(self, self.work_dir)
-        # Render cleanup script
-        cleanup_walltime = strfdelta(self.max_cleanup_time, '%H:%M:%S')
-        context = {
-            'execute_job_id': execute_job_id,
-            'execute_job_num': execute_job_id.split('.', 1)[0],
-            'job_work_dir': self.work_dir,
-            'job_archive_dir': self.archive_dir,
-            'job_home_dir': self.home_dir,
-            'project_id': self.project_id,
-            'cleanup_walltime': cleanup_walltime,
-            'archive_output_files': self.archive_output_files,
-            'home_output_files': self.home_output_files,
-            'transfer_output_files': self.transfer_output_files,
-        }
-
-        cleanup_template = os.path.join(resources_dir, 'clean_after_exec.sh')
-        with open(cleanup_template, 'r') as f:
-            text = f.read()
-            template = Template(text)
-            cleanup_script = template.render(context)
-        self.extended_properties['cleanup_job_id'] = client.submit(cleanup_script, self.work_dir, 'cleanup.pbs')
-
-        self.job_id = execute_job_id
         self._status = 'SUB'
         self.save()
-
-    def _parse_status(self, status_string):
-        """Parse status string returned from qstat command.
-
-        Args:
-            status_string(str): stdout from qstat command.
-
-        Returns:
-            str: TethysJob status string.
-        """
-        # EXAMPLE:
-        # topaz10:
-        #                                                             Req'd  Req'd   Elap
-        # Job ID          Username Queue    Jobname    SessID NDS TSK Memory Time  S Time
-        # --------------- -------- -------- ---------- ------ --- --- ------ ----- - -----
-        # 3101546.topaz10 user     transfer cleanup.pb --     1   1   --     00:05 Q --
-        try:
-            lines = status_string.split('\n')
-            status_line = lines[5]
-            cols = status_line.split()
-            status = cols[9].strip()
-            return self.UIT_TO_TETHYS_STATUSES[status]
-
-        except (IndexError, AttributeError):
-            return 'ERR'
 
     def _update_status(self):
         """Retrieve a job’s status using the UIT Plus Python client.
 
         Translates UitJob status to TethysJob status and saves to the database
         """
+        # TODO can we leverage the code from pyuit.Job here?
         # Get status using qstat with -H option to get historical data when job finishes.
         try:
-            pbs_command = 'qstat -H ' + self.job_id
-            status_string = self.client.call(command=pbs_command, work_dir='/tmp')
+            status = self.pbs_job.update_status()
+            new_status = self.UIT_TO_TETHYS_STATUSES.get(status, 'ERR')
         except DpRouteError as e:
             log.info('Ignoring DP_Route error: {}'.format(e))
             return
@@ -400,39 +354,45 @@ class UitPlusJob(PbsScript, TethysJob):
             self._status = 'ERR'
             return
 
-        new_status = self._parse_status(status_string)
-
         if new_status == "COM":
             if 'cleanup_job_id' in self.extended_properties:
                 if self.job_id != self.extended_properties['cleanup_job_id']:
                     new_status = "SUB"
                     self.job_id = self.extended_properties['cleanup_job_id']
-            else:
-                raise RuntimeError("Could not find cleanup script ID.")
+            # else:
+            #     raise RuntimeError("Could not find cleanup script ID.")
 
         self._status = new_status
         self.save()
 
         # Get intermediate results, if applicable
         if self.transfer_intermediate_files:
-            if self.intermediate_transfer_interval == 0 \
-                    or (timezone.now() - self.last_intermediate_transfer).minute > \
-                    self.intermediate_transfer_interval:
+            if self.intermediate_transfer_interval_exceeded:
                 self.last_intermediate_transfer = timezone.now()
                 thread = threading.Thread(target=self.get_intermediate_results)
                 thread.daemon = True
                 thread.start()
         self.save()
 
+    @property
+    def intermediate_transfer_interval_exceeded(self):
+        if self.intermediate_transfer_interval == 0:
+            return True
+        delta_time = (timezone.now() - self.last_intermediate_transfer)
+        minutes = delta_time.days * 24 * 60 + delta_time.seconds / 60
+        return minutes > self.intermediate_transfer_interval
+
     def _process_results(self):
         """Process the results using the UIT Plus Python client."""
         remote_dir = os.path.join(self.home_dir, 'transfer')
+        remote_dir = self.working_dir
         self.get_remote_files(remote_dir, self.transfer_output_files)
-        self.get_remote_files(remote_dir, ["log.stdout", "log.stderr"])
+        # self.get_remote_files(remote_dir, ["log.stdout", "log.stderr"])
+        # TODO get log files
 
     def get_intermediate_results(self):
         """Retrieve intermediate result files from the supercomputer."""
-        if self.get_remote_files(self.work_dir, self.transfer_intermediate_files):
+        if self.get_remote_files(self.working_dir, self.transfer_intermediate_files):
             if self.process_intermediate_results_function:
                 self.process_intermediate_results_function()
 
@@ -473,9 +433,9 @@ class UitPlusJob(PbsScript, TethysJob):
             bool: True if job was deleted.
         """
         # delete the job
-        pbs_command = 'qdel ' + self.job_id
+        pbs_command = f'qdel {self.job_id}'
         try:
-            self.client.call(command=pbs_command, work_dir=self.work_dir)
+            self.client.call(command=pbs_command, working_dir=self.working_dir)
             return True
         except RuntimeError:
             return False
@@ -487,9 +447,9 @@ class UitPlusJob(PbsScript, TethysJob):
             bool: True if job was paused.
         """
         # hold the job
-        pbs_command = 'qhold ' + self.job_id
+        pbs_command = f'qhold {self.job_id}'
         try:
-            self.client.call(command=pbs_command, work_dir=self.work_dir)
+            self.client.call(command=pbs_command, working_dir=self.working_dir)
             return True
         except RuntimeError:
             return False
@@ -501,9 +461,9 @@ class UitPlusJob(PbsScript, TethysJob):
             bool: True if job was resumed.
         """
         # resume the job
-        pbs_command = 'qrls ' + self.job_id
+        pbs_command = f'qrls {self.job_id}'
         try:
-            self.client.call(command=pbs_command, work_dir=self.work_dir)
+            self.client.call(command=pbs_command, working_dir=self.working_dir)
             return True
         except RuntimeError:
             return False
@@ -528,18 +488,16 @@ class UitPlusJob(PbsScript, TethysJob):
         # Remove remote locations
         rm_cmd = "rm -rf {} || true"
         commands = []
-        for path in (self.work_dir, self.home_dir):
-            # TODO: We should probably change this to figure out the actual remote workspace path, instead of
-            #  assuming it is one above our work/home path.
-            commands.append(rm_cmd.format(os.path.abspath(os.path.join(path, '..'))))
+        for path in (self.working_dir, self.home_dir):
+            commands.append(rm_cmd.format(path))
         if archive:
             commands.append("archive rm -rf {} || true".format(self.archive_dir))
 
         for cmd in commands:
-            thread = threading.Thread(target=self.client.call, kwargs={'command': cmd, 'work_dir': '/'})
+            thread = threading.Thread(target=self.client.call, kwargs={'command': cmd, 'working_dir': '/'})
             thread.daemon = True
             thread.start()
-            log.info("Executing command '{}' on topaz".format(cmd))
+            log.info(f"Executing command '{cmd}' on {self.system}")
         return True
 
 
@@ -555,6 +513,10 @@ def uit_job_pre_delete(sender, instance, using, **kwargs):
     """
     try:
         instance.stop()
-        instance.clean()
+        try:
+            if instance.clean_on_delete:
+                instance.clean()
+        except AttributeError:
+            instance.clean()
     except Exception as e:
         log.exception(str(e))

@@ -3,8 +3,7 @@ from setuptools import setup, find_packages
 
 # -- Python Dependencies -- #
 dependencies = [
-    'django_picklefield',
-    'uit',
+    'pyuit',
 ]
 
 setup(
