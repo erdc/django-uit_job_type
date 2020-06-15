@@ -44,3 +44,8 @@
 ```bash
 . test.sh <path_to_tethys_manage.py>
 ```
+
+
+**CONDA BUILD**
+
+conda build -c erdc/label/dev -c tethysplatform/label/dev -c conda-forge conda.recipe
