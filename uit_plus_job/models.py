@@ -119,11 +119,9 @@ class UitPlusJob(PbsScript, TethysJob):
                     pbs_kwargs[param] = kwargs.get(param, None)
 
         # When a Django model loads objects from the database, it passes in args, not kwargs
-        if len(args) == len(upj_fields):
+        if len(args) + 1 == len(upj_fields):
             # Get list of field names in the order Django passes them in
-            all_field_names = []
-            for field in upj_fields:
-                all_field_names.append(field.name)
+            all_field_names = [field.name for field in upj_fields if field.name != 'tethysjob_ptr']
             # Match up given arg values with field names
             for field_name, value in zip(all_field_names, args):
                 if field_name in pbs_signature.parameters:
@@ -311,6 +309,27 @@ class UitPlusJob(PbsScript, TethysJob):
             str: Work Directory
         """
         return self.pbs_job.working_dir
+
+    def get_logs(self):
+        if isinstance(self.pbs_job, PbsArrayJob):
+            self.custom_logs = {
+                'helios_out': 'run_$JOB_INDEX/helios.out',
+                'debug_log': 'run_$JOB_INDEX/log/debug.log',
+                'error_log': 'run_$JOB_INDEX/log/error.log',
+            }
+            logs = {log_type: {} for log_type in ['stdout', 'stderr'] + list(self.custom_logs)}
+            for sub_job in self.pbs_job.sub_jobs:
+                name = f'{sub_job.name}_{sub_job.job_index}'
+                logs['stdout'][name] = sub_job.get_stdout_log()
+                logs['stderr'][name] = sub_job.get_stderr_log()
+                for log_type, path in self.custom_logs.items():
+                    logs[log_type][name] = sub_job.get_custom_log(path)
+            return logs
+
+        return {
+            'stdout': self.pbs_job.get_stdout_log(),
+            'stderr': self.pbs_job.get_stderr_log(),
+        }
 
     def get_environment_variable(self, variable):
         """Get the value of an environment variable from the HPC.
