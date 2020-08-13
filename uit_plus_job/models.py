@@ -149,7 +149,7 @@ class UitPlusJob(PbsScript, TethysJob):
             name=job.name,
             user=user,
             label=job.label,
-            workspace=workspace,  # TODO
+            workspace=workspace,
 
             job_id=job.job_id,
             _status=cls.UIT_TO_TETHYS_STATUSES.get(job.status),
@@ -316,6 +316,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 'helios_out': 'run_$JOB_INDEX/helios.out',
                 'debug_log': 'run_$JOB_INDEX/log/debug.log',
                 'error_log': 'run_$JOB_INDEX/log/error.log',
+                'event_log': 'run_$JOB_INDEX/log/event.log',
             }
             logs = {log_type: {} for log_type in ['stdout', 'stderr'] + list(self.custom_logs)}
             for sub_job in self.pbs_job.sub_jobs:
@@ -323,7 +324,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 logs['stdout'][name] = sub_job.get_stdout_log()
                 logs['stderr'][name] = sub_job.get_stderr_log()
                 for log_type, path in self.custom_logs.items():
-                    logs[log_type][name] = sub_job.get_custom_log(path)
+                    logs[log_type][name] = sub_job.get_custom_log(path, num_lines=200)
             return logs
 
         return {
@@ -355,13 +356,17 @@ class UitPlusJob(PbsScript, TethysJob):
         self._status = 'SUB'
         self.save()
 
+    def _resubmit(self, *args, **kwargs):
+        self.pbs_job._job_id = None
+        self.execute()
+
     def _update_status(self):
         """Retrieve a job’s status using the UIT Plus Python client.
 
         Translates UitJob status to TethysJob status and saves to the database
         """
-        # TODO can we leverage the code from pyuit.Job here?
-        # Get status using qstat with -H option to get historical data when job finishes.
+        if self._status in TethysJob.TERMINAL_STATUSES:
+            return
         try:
             status = self.pbs_job.update_status()
             new_status = self.UIT_TO_TETHYS_STATUSES.get(status, 'ERR')
@@ -440,8 +445,6 @@ class UitPlusJob(PbsScript, TethysJob):
             except RuntimeError as e:
                 success = False
                 log.error("Failed to get remote file: {}".format(str(e)))
-                with open(local_path, 'w+') as f:
-                    print("Could not transfer file: {}".format(str(e)), file=f)
 
         return success
 
@@ -455,8 +458,11 @@ class UitPlusJob(PbsScript, TethysJob):
         pbs_command = f'qdel {self.job_id}'
         try:
             self.client.call(command=pbs_command, working_dir=self.working_dir)
+            self.update_status('ABT')
             return True
-        except RuntimeError:
+        except RuntimeError as e:
+            log.error(e)
+            self.update_status('ERR')
             return False
 
     def pause(self):
