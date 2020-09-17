@@ -223,7 +223,7 @@ class UitPlusJob(PbsScript, TethysJob):
             self._client = Client(token=self.token)
 
             # Connect the client
-            self._client.connect(system=self.system)
+            self._client.connect(system=self.system, retry_on_failure=True)
 
         # return the client
         return self._client
