@@ -6,6 +6,7 @@ import inspect
 import logging
 import datetime as dt
 from pathlib import Path
+from functools import partial
 from django.db import models
 from django.db.models.signals import pre_delete
 from django.dispatch import receiver
@@ -91,6 +92,7 @@ class UitPlusJob(PbsScript, TethysJob):
     transfer_intermediate_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     transfer_job_script = models.BooleanField(default=True)
     transfer_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    custom_logs = JSONField(default=dict)
     _modules = JSONField(null=True)
     _optional_directives = ArrayField(models.CharField(max_length=2048, null=True))
     _process_intermediate_results_function = models.CharField(max_length=1024, null=True)
@@ -312,24 +314,19 @@ class UitPlusJob(PbsScript, TethysJob):
 
     def get_logs(self):
         if isinstance(self.pbs_job, PbsArrayJob):
-            self.custom_logs = {
-                'helios_out': 'run_$JOB_INDEX/helios.out',
-                'debug_log': 'run_$JOB_INDEX/log/debug.log',
-                'error_log': 'run_$JOB_INDEX/log/error.log',
-                'event_log': 'run_$JOB_INDEX/log/event.log',
-            }
-            logs = {log_type: {} for log_type in ['stdout', 'stderr'] + list(self.custom_logs)}
+            logs = {}
             for sub_job in self.pbs_job.sub_jobs:
                 name = f'{sub_job.name}_{sub_job.job_index}'
-                logs['stdout'][name] = sub_job.get_stdout_log()
-                logs['stderr'][name] = sub_job.get_stderr_log()
-                for log_type, path in self.custom_logs.items():
-                    logs[log_type][name] = sub_job.get_custom_log(path, num_lines=200)
+                logs[name] = {}
+                logs[name]['stdout'] = sub_job.get_stdout_log
+                logs[name]['stderr'] = sub_job.get_stderr_log
+                logs[name].update({log_type: partial(sub_job.get_custom_log, path, num_lines=1000)
+                                   for log_type, path in self.custom_logs.items()})
             return logs
 
         return {
-            'stdout': self.pbs_job.get_stdout_log(),
-            'stderr': self.pbs_job.get_stderr_log(),
+            'stdout': self.pbs_job.get_stdout_log,
+            'stderr': self.pbs_job.get_stderr_log,
         }
 
     def get_environment_variable(self, variable):
