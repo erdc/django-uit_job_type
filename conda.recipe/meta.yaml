@@ -1,0 +1,33 @@
+{% set data = load_setup_py_data() %}
+
+package:
+  name: django-uit_job_type
+  version: {{ data['version'] }}
+
+source:
+  path: ..
+
+build:
+  noarch: python
+  number: 0
+  script: python setup.py install --single-version-externally-managed --record=record.txt
+
+requirements:
+  build:
+    - python
+    - setuptools
+  run:
+    - python
+
+    # dependencies are defined in setup.py
+    {% for dep in data['install_requires'] %}
+    - {{ dep.lower() }}
+    {% endfor %}
+
+test:
+  imports:
+    - uit_plus_job
+
+about:
+  home: https://github.com/erdc/django-uit_job_type
+  summary: Django app for Tethys Platform to add a UIT+ job type to the Jobs API
