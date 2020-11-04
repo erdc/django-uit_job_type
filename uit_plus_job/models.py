@@ -65,7 +65,7 @@ class UitPlusJob(PbsScript, TethysJob):
 
     SYSTEM_CHOICES = [(s, s) for s in NODE_TYPES.keys()]
 
-    NODE_TYPE_CHOICES = [(nt, nt) for nt in {nt for s in NODE_TYPES.values() for nt in s.keys()}]
+    NODE_TYPE_CHOICES = [(nt, nt) for nt in sorted({nt for s in NODE_TYPES.values() for nt in s.keys()})]
 
     # job vars
     job_id = models.CharField(max_length=1024, null=True)
@@ -451,16 +451,12 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             bool: True if job was deleted.
         """
-        # delete the job
-        pbs_command = f'qdel {self.job_id}'
-        try:
-            self.client.call(command=pbs_command, working_dir=self.working_dir)
+        result = self.pbs_job.terminate()
+        if result:
             self.update_status('ABT')
-            return True
-        except RuntimeError as e:
-            log.error(e)
+        else:
             self.update_status('ERR')
-            return False
+        return result
 
     def pause(self):
         """Pauses this job.
@@ -468,13 +464,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             bool: True if job was paused.
         """
-        # hold the job
-        pbs_command = f'qhold {self.job_id}'
-        try:
-            self.client.call(command=pbs_command, working_dir=self.working_dir)
-            return True
-        except RuntimeError:
-            return False
+        return self.pbs_job.hold()
 
     def resume(self):
         """Resumes this job if paused.
@@ -482,13 +472,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             bool: True if job was resumed.
         """
-        # resume the job
-        pbs_command = f'qrls {self.job_id}'
-        try:
-            self.client.call(command=pbs_command, working_dir=self.working_dir)
-            return True
-        except RuntimeError:
-            return False
+        return self.pbs_job.release()
 
     def clean(self, archive=False):
         """Remove all files and directories associated with the job.

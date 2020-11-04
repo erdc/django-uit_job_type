@@ -19,6 +19,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='uitplusjob',
             name='node_type',
-            field=models.CharField(choices=[('gpu', 'gpu'), ('compute', 'compute'), ('transfer', 'transfer'), ('bigmem', 'bigmem'), ('knl', 'knl')], default='compute', max_length=10),
+            field=models.CharField(choices=[('bigmem', 'bigmem'), ('compute', 'compute'), ('gpu', 'gpu'), ('knl', 'knl'), ('transfer', 'transfer')], default='compute', max_length=10),
         ),
     ]
