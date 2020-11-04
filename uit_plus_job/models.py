@@ -12,6 +12,7 @@ from django.db.models.signals import pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
 from django.contrib.postgres.fields import ArrayField, JSONField
+from django.contrib.auth.models import User
 from tethys_apps.base.function_extractor import TethysFunctionExtractor
 from uit.exceptions import DpRouteError
 from uit import Client, PbsScript, PbsJob, PbsArrayJob
@@ -20,6 +21,27 @@ from tethys_compute.models.tethys_job import TethysJob
 
 
 log = logging.getLogger('tethys.' + __name__)
+
+
+class EnvironmentProfile(models.Model):
+    """
+    Model that stores modules and environment
+    variables for a specific run profile.
+
+    Attributes:
+        user (foreign key): The user to whom the profile belongs
+        name (str): The name of the profile
+        hpc_system (str): The name of the hpc system the profile was created for (e.g. "onyx")
+        environment_variables (str): A Json string of the environment variables
+        modules (str): A Json string of the modules to load and unload
+        last_used (datetime): The time the profile was last loaded (for sorting)
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    name = models.CharField(max_length=64)
+    hpc_system = models.CharField(max_length=64)
+    environment_variables = models.CharField(max_length=1024)
+    modules = models.CharField(max_length=1024)
+    last_used = models.DateTimeField(auto_now_add=True)
 
 
 class UitPlusJob(PbsScript, TethysJob):
