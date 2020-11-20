@@ -370,7 +370,7 @@ class UitPlusJob(PbsScript, TethysJob):
         except DpRouteError as e:
             log.info('Ignoring DP_Route error: {}'.format(e))
             return
-        except RuntimeError as e:
+        except Exception as e:
             log.error('Attempt to get status for job %s failed: %s', self.job_id, str(e))
             self._status = 'ERR'
             return
