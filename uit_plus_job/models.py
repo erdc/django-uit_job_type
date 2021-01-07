@@ -42,6 +42,99 @@ class EnvironmentProfile(models.Model):
     environment_variables = models.CharField(max_length=1024)
     modules = models.CharField(max_length=1024)
     last_used = models.DateTimeField(auto_now_add=True)
+    user_default = models.BooleanField(default=False)
+    default_for_versions = ArrayField(models.CharField(max_length=16), default=list, null=True)
+
+
+    @classmethod
+    def set_default_for_version(cls, helios_version, profile, usr):
+        """
+        Set profile as the default for the selected helios version.
+        """
+        # Find current default for helios version
+        ver_default = cls._get_default_for_version(helios_version, usr)
+        if ver_default:
+            # Remove version from its list of defaults
+            ver_default.default_for_versions.remove(helios_version)
+            # Save
+            ver_default.save()
+        # Add version to current profile default
+        profile.default_for_versions.append(helios_version)
+        # Save
+        profile.save()
+
+    @classmethod
+    def set_general_default(cls, profile, usr):
+        """
+        Set the provided profile as the general default
+        """
+        # Set profile as default
+        profile.user_default = True
+        # Save
+        profile.save()
+        # Get current default
+        old_default = cls._get_general_default(usr)
+        # Remove it as general default
+        old_default.user_default = False
+        # Save
+        old_default.save()
+
+    @classmethod
+    def get_default(cls, usr, helios_version=None):
+        """
+        Get the default for this helios version. Return the
+        general default if it doesn't exist.
+        """
+        if helios_version:
+            vers_default = cls._get_default_for_version(helios_version, usr)
+
+            if not vers_default:
+                gen_default = cls._get_general_default(usr)
+                return gen_default
+            else:
+                return vers_default
+
+        return cls._get_general_default(usr)
+
+
+    @classmethod
+    def _get_default_for_version(cls, helios_version, usr):
+        """
+        Get the profile listed as default for the specified helios version
+        """
+        try:
+            profiles = cls.objects.get(user=usr,
+                    default_for_versions__contains=[helios_version,])
+
+        except cls.DoesNotExist:
+            return None
+
+        return profiles
+
+    @classmethod
+    def _get_general_default(cls, usr):
+        """
+        Return the general default
+        """
+        try:
+            profiles = cls.objects.get(user=usr, user_default=True)
+        except cls.DoesNotExist:
+            return None
+        except cls.MultipleObjectsReturned:
+            return cls.objects.filter(user=usr, user_default=True)[0]
+
+        return profiles
+
+    def is_default_for_version(self, helios_version):
+        """
+        Return True if this profile is the default profile for the
+        included helios_version.
+        """
+        return helios_version in self.default_for_versions
+
+    def remove_default_for_version(self, helios_version):
+        if helios_version in self.default_for_versions:
+            self.default_for_versions.remove(helios_version)
 
 
 class UitPlusJob(PbsScript, TethysJob):
