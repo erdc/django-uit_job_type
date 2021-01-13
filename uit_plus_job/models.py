@@ -68,13 +68,13 @@ class EnvironmentProfile(models.Model):
         """
         Set the provided profile as the general default
         """
+        # Get current default
+        old_default = cls._get_general_default(usr)
         # Set profile as default
         profile.user_default = True
         # Save
         profile.save()
-        # Get current default
-        old_default = cls._get_general_default(usr)
-        # Remove it as general default
+        # Remove the old default as general default
         old_default.user_default = False
         # Save
         old_default.save()
