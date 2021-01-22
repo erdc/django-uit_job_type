@@ -364,16 +364,9 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         if self._status in TethysJob.TERMINAL_STATUSES:
             return
-        try:
-            status = self.pbs_job.update_status()
-            new_status = self.UIT_TO_TETHYS_STATUSES.get(status, 'ERR')
-        except DpRouteError as e:
-            log.info('Ignoring DP_Route error: {}'.format(e))
-            return
-        except Exception as e:
-            log.error('Attempt to get status for job %s failed: %s', self.job_id, str(e))
-            self._status = 'ERR'
-            return
+
+        status = self.pbs_job.update_status()
+        new_status = self.UIT_TO_TETHYS_STATUSES.get(status, 'ERR')
 
         if new_status == "COM":
             if 'cleanup_job_id' in self.extended_properties:
@@ -384,6 +377,7 @@ class UitPlusJob(PbsScript, TethysJob):
             #     raise RuntimeError("Could not find cleanup script ID.")
 
         self._status = new_status
+        self._qstat = self.pbs_job.qstat
         self.save()
 
         # Get intermediate results, if applicable
