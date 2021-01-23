@@ -21,6 +21,12 @@ from tethys_compute.models.tethys_job import TethysJob
 
 log = logging.getLogger('tethys.' + __name__)
 
+try:
+    import pandas as pd
+    has_pandas = True
+except ImportError:
+    has_pandas = False
+
 
 class UitPlusJob(PbsScript, TethysJob):
     """UIT+ Job type for use in Tethys Apps.
@@ -82,6 +88,7 @@ class UitPlusJob(PbsScript, TethysJob):
     node_type = models.CharField(max_length=10, choices=NODE_TYPE_CHOICES, default='compute', null=False)
     system = models.CharField(max_length=10, choices=SYSTEM_CHOICES, default='onyx', null=False)
     execution_block = models.TextField(null=False)
+    qstat = JSONField(null=True)
 
     # other
     archive_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
@@ -197,7 +204,14 @@ class UitPlusJob(PbsScript, TethysJob):
             j._remote_workspace_id = self._remote_workspace_id
             j._remote_workspace = self._remote_workspace
             j._job_id = self.job_id
-            j._status = self._status
+            if self.qstat:
+                if not has_pandas:
+                    j._qstat = self.qstat
+                else:
+                    j._qstat = pd.DataFrame.from_records(self.qstat)
+                j._status = self.qstat['status'] if not self._array_indices else self.qstat[self.job_id]['status']
+            else:
+                j._status = self._status
             self._pbs_job = j
         return self._pbs_job
 
@@ -362,6 +376,7 @@ class UitPlusJob(PbsScript, TethysJob):
 
         Translates UitJob status to TethysJob status and saves to the database
         """
+        print("Updating status!")
         if self._status in TethysJob.TERMINAL_STATUSES:
             return
         try:
@@ -384,6 +399,14 @@ class UitPlusJob(PbsScript, TethysJob):
             #     raise RuntimeError("Could not find cleanup script ID.")
 
         self._status = new_status
+        if type(self.pbs_job.qstat) is dict:
+            self.qstat = self.pbs_job.qstat
+            print("Saving dict qstat...")
+        else:
+            # Pandas dataframe
+            self.qstat = self.pbs_job.qstat.to_records(index=False)
+            print("Saving pd qstat...")
+
         self.save()
 
         # Get intermediate results, if applicable
