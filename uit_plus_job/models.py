@@ -5,7 +5,7 @@ import threading
 import inspect
 import logging
 import datetime as dt
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from functools import partial
 from django.db import models
 from django.db.models.signals import pre_delete
@@ -104,7 +104,7 @@ class EnvironmentProfile(models.Model):
         """
         try:
             profiles = cls.objects.get(user=usr,
-                    default_for_versions__contains=[helios_version,])
+                                       default_for_versions__contains=[helios_version])
 
         except cls.DoesNotExist:
             return None
@@ -187,6 +187,9 @@ class UitPlusJob(PbsScript, TethysJob):
     archive_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     home_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     transfer_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    _remote_workspace = models.TextField(blank=True)
+    _remote_workspace_id = models.CharField(max_length=100)
+    qstat = JSONField(null=True)
 
     # pbs_script vars
     project_id = models.CharField(max_length=1024, null=False)
@@ -197,6 +200,11 @@ class UitPlusJob(PbsScript, TethysJob):
     node_type = models.CharField(max_length=10, choices=NODE_TYPE_CHOICES, default='compute', null=False)
     system = models.CharField(max_length=10, choices=SYSTEM_CHOICES, default='onyx', null=False)
     execution_block = models.TextField(null=False)
+    _modules = JSONField(null=True)
+    _module_use = JSONField(null=True)
+    _optional_directives = ArrayField(models.CharField(max_length=2048, null=True))
+    _environment_variables = JSONField(null=True)
+    _array_indices = ArrayField(models.IntegerField(), null=True)
 
     # other
     archive_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
@@ -208,14 +216,7 @@ class UitPlusJob(PbsScript, TethysJob):
     transfer_job_script = models.BooleanField(default=True)
     transfer_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     custom_logs = JSONField(default=dict)
-    _modules = JSONField(null=True)
-    _optional_directives = ArrayField(models.CharField(max_length=2048, null=True))
     _process_intermediate_results_function = models.CharField(max_length=1024, null=True)
-    _remote_workspace = models.TextField(blank=True)
-    _remote_workspace_id = models.CharField(max_length=100)
-    _environment_variables = JSONField(null=True)
-    _array_indices = ArrayField(models.IntegerField(), null=True)
-
     _update_status_interval = dt.timedelta(seconds=30)  # This is not effective until jobs table uses WS
 
     def __init__(self, *args, **kwargs):
@@ -260,16 +261,17 @@ class UitPlusJob(PbsScript, TethysJob):
         self.save()
 
     @classmethod
-    def instance_from_pbs_job(cls, job, user, workspace):
+    def instance_from_pbs_job(cls, job, user):
         script = job.script
         instance = cls(
             name=job.name,
             user=user,
             label=job.label,
-            workspace=workspace,
+            workspace=job.workspace.as_posix(),
 
             job_id=job.job_id,
             _status=cls.UIT_TO_TETHYS_STATUSES.get(job.status),
+            qstat=job.qstat,
             project_id=script.project_id,
             system=script.system,
             node_type=script.node_type,
@@ -280,6 +282,7 @@ class UitPlusJob(PbsScript, TethysJob):
             execution_block=script.execution_block,
             _optional_directives=script._optional_directives,
             _modules=script._modules,
+            _module_use=script._module_use,
             _environment_variables=script._environment_variables,
             _array_indices=script._array_indices,
 
@@ -305,14 +308,20 @@ class UitPlusJob(PbsScript, TethysJob):
                 script=self,
                 client=self.client,
                 label=self.label,
+                workspace=Path(self.workspace),
                 transfer_input_files=self.transfer_input_files,
                 home_input_files=self.home_input_files,
                 archive_input_files=self.archive_input_files,
             )
             j._remote_workspace_id = self._remote_workspace_id
-            j._remote_workspace = self._remote_workspace
+            j._remote_workspace = PurePosixPath(self._remote_workspace)
             j._job_id = self.job_id
             j._status = self._status
+            j._qstat = self.qstat
+            if self._array_indices and self.qstat is not None:
+                for sub_job in j.sub_jobs:
+                    sub_job._qstat = self.qstat.get(sub_job.job_id)
+                    sub_job._status = sub_job.qstat.get('status')
             self._pbs_job = j
         return self._pbs_job
 
@@ -492,7 +501,7 @@ class UitPlusJob(PbsScript, TethysJob):
             #     raise RuntimeError("Could not find cleanup script ID.")
 
         self._status = new_status
-        self._qstat = self.pbs_job.qstat
+        self.qstat = self.pbs_job.qstat
         self.save()
 
         # Get intermediate results, if applicable
