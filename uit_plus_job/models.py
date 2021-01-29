@@ -5,13 +5,14 @@ import threading
 import inspect
 import logging
 import datetime as dt
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from functools import partial
 from django.db import models
 from django.db.models.signals import pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
 from django.contrib.postgres.fields import ArrayField, JSONField
+from django.contrib.auth.models import User
 from tethys_apps.base.function_extractor import TethysFunctionExtractor
 from uit.exceptions import DpRouteError
 from uit import Client, PbsScript, PbsJob, PbsArrayJob
@@ -20,6 +21,120 @@ from tethys_compute.models.tethys_job import TethysJob
 
 
 log = logging.getLogger('tethys.' + __name__)
+
+
+class EnvironmentProfile(models.Model):
+    """
+    Model that stores modules and environment
+    variables for a specific run profile.
+
+    Attributes:
+        user (foreign key): The user to whom the profile belongs
+        name (str): The name of the profile
+        hpc_system (str): The name of the hpc system the profile was created for (e.g. "onyx")
+        environment_variables (str): A Json string of the environment variables
+        modules (str): A Json string of the modules to load and unload
+        last_used (datetime): The time the profile was last loaded (for sorting)
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    name = models.CharField(max_length=64)
+    hpc_system = models.CharField(max_length=64)
+    environment_variables = models.CharField(max_length=1024)
+    modules = models.CharField(max_length=1024)
+    last_used = models.DateTimeField(auto_now_add=True)
+    user_default = models.BooleanField(default=False)
+    default_for_versions = ArrayField(models.CharField(max_length=16), default=list, null=True)
+
+
+    @classmethod
+    def set_default_for_version(cls, helios_version, profile, usr):
+        """
+        Set profile as the default for the selected helios version.
+        """
+        # Find current default for helios version
+        ver_default = cls._get_default_for_version(helios_version, usr)
+        if ver_default:
+            # Remove version from its list of defaults
+            ver_default.default_for_versions.remove(helios_version)
+            # Save
+            ver_default.save()
+        # Add version to current profile default
+        profile.default_for_versions.append(helios_version)
+        # Save
+        profile.save()
+
+    @classmethod
+    def set_general_default(cls, profile, usr):
+        """
+        Set the provided profile as the general default
+        """
+        # Get current default
+        old_default = cls._get_general_default(usr)
+        # Set profile as default
+        profile.user_default = True
+        # Save
+        profile.save()
+        # Remove the old default as general default
+        old_default.user_default = False
+        # Save
+        old_default.save()
+
+    @classmethod
+    def get_default(cls, usr, helios_version=None):
+        """
+        Get the default for this helios version. Return the
+        general default if it doesn't exist.
+        """
+        if helios_version:
+            vers_default = cls._get_default_for_version(helios_version, usr)
+
+            if not vers_default:
+                gen_default = cls._get_general_default(usr)
+                return gen_default
+            else:
+                return vers_default
+
+        return cls._get_general_default(usr)
+
+
+    @classmethod
+    def _get_default_for_version(cls, helios_version, usr):
+        """
+        Get the profile listed as default for the specified helios version
+        """
+        try:
+            profiles = cls.objects.get(user=usr,
+                                       default_for_versions__contains=[helios_version])
+
+        except cls.DoesNotExist:
+            return None
+
+        return profiles
+
+    @classmethod
+    def _get_general_default(cls, usr):
+        """
+        Return the general default
+        """
+        try:
+            profiles = cls.objects.get(user=usr, user_default=True)
+        except cls.DoesNotExist:
+            return None
+        except cls.MultipleObjectsReturned:
+            return cls.objects.filter(user=usr, user_default=True)[0]
+
+        return profiles
+
+    def is_default_for_version(self, helios_version):
+        """
+        Return True if this profile is the default profile for the
+        included helios_version.
+        """
+        return helios_version in self.default_for_versions
+
+    def remove_default_for_version(self, helios_version):
+        if helios_version in self.default_for_versions:
+            self.default_for_versions.remove(helios_version)
 
 
 class UitPlusJob(PbsScript, TethysJob):
@@ -72,6 +187,9 @@ class UitPlusJob(PbsScript, TethysJob):
     archive_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     home_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     transfer_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    _remote_workspace = models.TextField(blank=True)
+    _remote_workspace_id = models.CharField(max_length=100)
+    qstat = JSONField(null=True)
 
     # pbs_script vars
     project_id = models.CharField(max_length=1024, null=False)
@@ -82,6 +200,11 @@ class UitPlusJob(PbsScript, TethysJob):
     node_type = models.CharField(max_length=10, choices=NODE_TYPE_CHOICES, default='compute', null=False)
     system = models.CharField(max_length=10, choices=SYSTEM_CHOICES, default='onyx', null=False)
     execution_block = models.TextField(null=False)
+    _modules = JSONField(null=True)
+    _module_use = JSONField(null=True)
+    _optional_directives = ArrayField(models.CharField(max_length=2048, null=True))
+    _environment_variables = JSONField(null=True)
+    _array_indices = ArrayField(models.IntegerField(), null=True)
 
     # other
     archive_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
@@ -93,14 +216,7 @@ class UitPlusJob(PbsScript, TethysJob):
     transfer_job_script = models.BooleanField(default=True)
     transfer_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     custom_logs = JSONField(default=dict)
-    _modules = JSONField(null=True)
-    _optional_directives = ArrayField(models.CharField(max_length=2048, null=True))
     _process_intermediate_results_function = models.CharField(max_length=1024, null=True)
-    _remote_workspace = models.TextField(blank=True)
-    _remote_workspace_id = models.CharField(max_length=100)
-    _environment_variables = JSONField(null=True)
-    _array_indices = ArrayField(models.IntegerField(), null=True)
-
     _update_status_interval = dt.timedelta(seconds=30)  # This is not effective until jobs table uses WS
 
     def __init__(self, *args, **kwargs):
@@ -145,16 +261,17 @@ class UitPlusJob(PbsScript, TethysJob):
         self.save()
 
     @classmethod
-    def instance_from_pbs_job(cls, job, user, workspace):
+    def instance_from_pbs_job(cls, job, user):
         script = job.script
         instance = cls(
             name=job.name,
             user=user,
             label=job.label,
-            workspace=workspace,
+            workspace=job.workspace.as_posix(),
 
             job_id=job.job_id,
             _status=cls.UIT_TO_TETHYS_STATUSES.get(job.status),
+            qstat=job.qstat,
             project_id=script.project_id,
             system=script.system,
             node_type=script.node_type,
@@ -165,6 +282,7 @@ class UitPlusJob(PbsScript, TethysJob):
             execution_block=script.execution_block,
             _optional_directives=script._optional_directives,
             _modules=script._modules,
+            _module_use=script._module_use,
             _environment_variables=script._environment_variables,
             _array_indices=script._array_indices,
 
@@ -190,14 +308,20 @@ class UitPlusJob(PbsScript, TethysJob):
                 script=self,
                 client=self.client,
                 label=self.label,
+                workspace=Path(self.workspace),
                 transfer_input_files=self.transfer_input_files,
                 home_input_files=self.home_input_files,
                 archive_input_files=self.archive_input_files,
             )
             j._remote_workspace_id = self._remote_workspace_id
-            j._remote_workspace = self._remote_workspace
+            j._remote_workspace = PurePosixPath(self._remote_workspace)
             j._job_id = self.job_id
             j._status = self._status
+            j._qstat = self.qstat
+            if self._array_indices and self.qstat is not None:
+                for sub_job in j.sub_jobs:
+                    sub_job._qstat = self.qstat.get(sub_job.job_id)
+                    sub_job._status = sub_job.qstat.get('status')
             self._pbs_job = j
         return self._pbs_job
 
@@ -377,7 +501,7 @@ class UitPlusJob(PbsScript, TethysJob):
             #     raise RuntimeError("Could not find cleanup script ID.")
 
         self._status = new_status
-        self._qstat = self.pbs_job.qstat
+        self.qstat = self.pbs_job.qstat
         self.save()
 
         # Get intermediate results, if applicable
