@@ -471,8 +471,10 @@ class UitPlusJob(PbsScript, TethysJob):
             self.job_id = self.pbs_job.submit(self, remote_name=remote_name)
         except RuntimeError as e:
             self._status = 'ERR'
+            self.status_message = f'Error submitting job on "{self.system}": {e}'
+            log.exception(e)
             self.save()
-            raise RuntimeError('Error submitting job on "{}": {}'.format(self.system, str(e)))
+
 
         self._status = 'SUB'
         self.save()
