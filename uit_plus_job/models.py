@@ -469,15 +469,10 @@ class UitPlusJob(PbsScript, TethysJob):
         try:
             # Submit job with PbsScript object and remote workspace
             self.job_id = self.pbs_job.submit(self, remote_name=remote_name)
-        except RuntimeError as e:
-            self._status = 'ERR'
+        except Exception as e:
             self.status_message = f'Error submitting job on "{self.system}": {e}'
             log.exception(e)
-            self.save()
-
-
-        self._status = 'SUB'
-        self.save()
+            raise e
 
     def _resubmit(self, *args, **kwargs):
         self.pbs_job._job_id = None
