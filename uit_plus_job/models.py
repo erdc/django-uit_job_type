@@ -338,6 +338,8 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @staticmethod
     def parse_pbs_directive(directive_str):
+        if isinstance(directive_str, PbsDirective):
+            return directive_str
         m = re.match("PbsDirective\(directive='(.*?)', options='(.*?)'\)", directive_str)
         return PbsDirective(*m.groups())
 
@@ -393,8 +395,6 @@ class UitPlusJob(PbsScript, TethysJob):
                 self._process_intermediate_results_function, None)
             if function_extractor.valid:
                 return function_extractor.function
-
-
 
     @process_intermediate_results_function.setter
     def process_intermediate_results_function(self, function):
