@@ -394,6 +394,8 @@ class UitPlusJob(PbsScript, TethysJob):
             if function_extractor.valid:
                 return function_extractor.function
 
+
+
     @process_intermediate_results_function.setter
     def process_intermediate_results_function(self, function):
         if isinstance(function, str):
