@@ -15,10 +15,9 @@ from django.utils import timezone
 from django.contrib.postgres.fields import ArrayField, JSONField
 from django.contrib.auth.models import User
 from tethys_apps.base.function_extractor import TethysFunctionExtractor
-from uit.exceptions import DpRouteError
+from uit.exceptions import DpRouteError, UITError
 from uit import Client, PbsScript, PbsJob, PbsArrayJob
-from uit.pbs_script import PbsDirective
-from uit.pbs_script import NODE_TYPES
+from uit.pbs_script import PbsDirective, NODE_TYPES
 from tethys_compute.models.tethys_job import TethysJob
 
 
@@ -258,6 +257,9 @@ class UitPlusJob(PbsScript, TethysJob):
         self.remote_workspace_suffix  # initialize "remote" variables
 
         self.save()
+
+    def __str__(self):
+        return TethysJob.__str__(self)
 
     @classmethod
     def instance_from_pbs_job(cls, job, user):
@@ -501,7 +503,15 @@ class UitPlusJob(PbsScript, TethysJob):
         if self._status in TethysJob.TERMINAL_STATUSES:
             return
 
-        status = self.pbs_job.update_status()
+        try:
+            status = self.pbs_job.update_status()
+        except UITError as e:
+            if 'qstat: Unknown Job Id' in str(e):
+                status = 'F'
+                self.status_message = f'Job ID was not found on {self.client.system}. ' \
+                                      f'Unable to get status information.'
+            else:
+                raise e
         new_status = self.UIT_TO_TETHYS_STATUSES.get(status, 'ERR')
 
         if new_status == "COM":
