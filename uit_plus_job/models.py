@@ -40,6 +40,7 @@ class EnvironmentProfile(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=64)
     hpc_system = models.CharField(max_length=64)
+    software = models.CharField(max_length=1024, null=True)
     email = models.CharField(max_length=1024, null=True)
     environment_variables = models.CharField(max_length=2048, null=True)
     modules = JSONField(null=True)
@@ -47,14 +48,20 @@ class EnvironmentProfile(models.Model):
     user_default = models.BooleanField(default=False)
     default_for_versions = ArrayField(models.CharField(max_length=16), default=list, null=True)
 
-
     @classmethod
-    def set_default_for_version(cls, version, profile, usr):
-        """
-        Set profile as the default for the selected version.
+    def set_default_for_version(cls, usr, profile, version):
+        """Set profile as the default for the selected version.
+
+        Args:
+            usr:
+            version:
+            profile:
+
+        Returns:
+
         """
         # Find current default for version
-        ver_default = cls._get_default_for_version(version, usr)
+        ver_default = cls._get_default_for_version(usr, profile.hpc_system, profile.software, version)
         if ver_default:
             # Remove version from its list of defaults
             ver_default.default_for_versions.remove(version)
@@ -66,12 +73,18 @@ class EnvironmentProfile(models.Model):
         profile.save()
 
     @classmethod
-    def set_general_default(cls, profile, usr):
-        """
-        Set the provided profile as the general default
+    def set_general_default(cls, usr, profile):
+        """Set the provided profile as the general default
+
+        Args:
+            usr:
+            profile:
+
+        Returns:
+
         """
         # Get current default
-        old_default = cls._get_general_default(usr)
+        old_default = cls._get_general_default(usr, profile.hpc_system, profile.software)
         # Set profile as default
         profile.user_default = True
         # Save
@@ -82,55 +95,90 @@ class EnvironmentProfile(models.Model):
         old_default.save()
 
     @classmethod
-    def get_default(cls, usr, version=None):
-        """
-        Get the default for this version. Return the
-        general default if it doesn't exist.
+    def get_default(cls, usr, hpc_system, software, version=None, use_general_default=True):
+        """Get the default for this version. Return the general default if it doesn't exist.
+
+        Args:
+            usr:
+            hpc_system:
+            software:
+            version:
+            use_general_default:
+
+        Returns:
+
         """
         if version:
-            default = cls._get_default_for_version(version, usr)
-            if default:
+            default = cls._get_default_for_version(usr, hpc_system, software, version)
+            if default or not use_general_default:
                 return default
 
-        return cls._get_general_default(usr)
+        return cls._get_general_default(usr, hpc_system, software)
 
-
-    @classmethod
-    def _get_default_for_version(cls, version, usr):
+    @ classmethod
+    def _get_default_for_version(cls, usr, hpc_system, software, version):
         """
         Get the profile listed as default for the specified version
+
+        Args:
+            usr:
+            hpc_system:
+            software:
+            version:
+
+        Returns:
+
         """
         try:
-            profiles = cls.objects.get(user=usr,
-                                       default_for_versions__contains=[version])
+            profile = cls.objects.get(user=usr, hpc_system=hpc_system, software=software,
+                                      default_for_versions__contains=[version])
 
         except cls.DoesNotExist:
             return None
 
-        return profiles
+        return profile
 
     @classmethod
-    def _get_general_default(cls, usr):
-        """
-        Return the general default
+    def _get_general_default(cls, usr, hpc_system, software):
+        """Return the general default
+
+        Args:
+            system:
+            software:
+            usr:
+
+        Returns:
+
         """
         try:
-            profiles = cls.objects.get(user=usr, user_default=True)
+            profiles = cls.objects.get(user=usr, hpc_system=hpc_system, software=software, user_default=True)
         except cls.DoesNotExist:
             return None
         except cls.MultipleObjectsReturned:
-            return cls.objects.filter(user=usr, user_default=True)[0]
+            return cls.objects.filter(user=usr, hpc_system=hpc_system, software=software, user_default=True)[0]
 
         return profiles
 
     def is_default_for_version(self, version):
-        """
-        Return True if this profile is the default profile for the
-        included version.
+        """Return True if this profile is the default profile for the included version.
+
+        Args:
+            version:
+
+        Returns:
+
         """
         return version in self.default_for_versions
 
     def remove_default_for_version(self, version):
+        """
+
+        Args:
+            version:
+
+        Returns:
+
+        """
         if version in self.default_for_versions:
             self.default_for_versions.remove(version)
 

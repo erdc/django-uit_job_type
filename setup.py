@@ -8,7 +8,7 @@ dependencies = [
 
 setup(
     name='uit_plus_job',
-    version='0.1.0a2',
+    version='0.1.0',
     description='',
     long_description='',
     keywords='',
