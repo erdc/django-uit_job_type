@@ -534,8 +534,21 @@ class UitPlusJob(PbsScript, TethysJob):
         try:
             # Submit job with PbsScript object and remote workspace
             self.job_id = self.pbs_job.submit(self, remote_name=remote_name)
+        except UITError as e:
+            if 'allocation' in str(e):
+                self.status_message = 'Submission failed because subproject allocation has expired or there are ' \
+                                      'insufficient hours.'
+            else:
+                self.status_message = str(e)
+            log.exception(e)
+            raise e
         except Exception as e:
-            self.status_message = f'Error submitting job on "{self.system}": {e}'
+            try:
+                self.client.call(f'ls {self.working_dir}/*.pbs')
+            except:
+                self.status_message = 'No PBS script created. Contact web site administrator for resolution.'
+            else:
+                self.status_message = f'Error submitting job on "{self.system}": {e}'
             log.exception(e)
             raise e
 
