@@ -1,13 +1,14 @@
 from collections import OrderedDict
 import json
 import logging
+import re
 
 import param
 import panel as pn
 
 from django.contrib.auth.models import User
 from uit_plus_job.models import UitPlusJob, EnvironmentProfile
-from uit.gui_tools import HpcSubmit
+from uit.gui_tools import HpcSubmit, FileSelector, HpcFileBrowser
 
 
 log = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ class TethysHpcSubmit(HpcSubmit):
     delete_profile_btn = param.Action(lambda self: self.update_delete_panel(True), label='Delete Selected Profile')
     delete_btn = param.Action(lambda self: self._delete_current_profile(), label='Delete')
     cancel_delete_btn = param.Action(lambda self: self.update_delete_panel(False), label='Cancel')
+    local_pbs_content = param.ClassSelector(bytes)
 
     # Parameters to override in subclass
     get_versions = param.Action(lambda uit_client: [], precedence=-1)
@@ -41,11 +43,21 @@ class TethysHpcSubmit(HpcSubmit):
         self.overwrite_request = None
         self.cb = None
         self.progress_bar = pn.widgets.misc.Progress(width=250, active=False, css_classes=["hidden"])
-        self._loading(False)
         self.alert = pn.pane.Alert(css_classes=['hidden'])
         self.no_version_profiles_alert = pn.pane.Alert(
             'No profiles have been created for the selected version',
             alert_type='warning', css_classes=['hidden'], margin=(0, 5, 20, 5))
+
+        # Remote pbs selector
+        self.select_pbs = FileSelector(
+            help_text='Load environment from a PBS file',
+        )
+
+        self.select_pbs.param.watch(self.parse_remote_pbs, 'file_path')
+
+        # Local pbs selector
+        self.local_select_pbs = pn.widgets.FileInput(accept=".sh,.pbs")
+
         self.pbs_options_pane = None
 
     def get_profiles(self, version=None):
@@ -156,24 +168,11 @@ class TethysHpcSubmit(HpcSubmit):
         if self.environment_profile and not self.environment_profile == "default":
             self._populate_profile_from_saved(self.environment_profile)
 
-    def _loading(self, active):
-        if self.progress_bar is not None:
-            self.progress_bar.active = active
-            if not active:
-                if "hidden" not in self.progress_bar.css_classes:
-                    self.progress_bar.css_classes.append("hidden")
-            else:
-                try:
-                    self.progress_bar.css_classes.remove("hidden")
-                except ValueError:
-                    pass
-
     def _load_profiles(self):
         """
         Get a list of profiles from the database
         that belong to this user
         """
-        self._loading(True)
         profiles = self.get_profiles()
 
         # Create default profile for user if one does not exist
@@ -205,10 +204,8 @@ class TethysHpcSubmit(HpcSubmit):
             if getattr(self, attr) not in self.profiles:
                 setattr(self, attr, self.profiles[0])
         self.update_version_profiles()
-        self._loading(False)
 
     def _delete_current_profile(self, event=None):
-        self._loading(True)
         log.info("Deleting profile {}".format(self.environment_profile_delete))
 
         del_profile = self.get_profile(name=self.environment_profile_delete)
@@ -234,7 +231,6 @@ class TethysHpcSubmit(HpcSubmit):
         # and were just asking for confirmation
 
         if self.overwrite_request is not None and self.overwrite_request.name == self.save_name:
-            self._loading(True)
             saving_profile = self.overwrite_request
             saving_profile.modules = modules
             saving_profile.environment_variables = env_var_json
@@ -251,7 +247,6 @@ class TethysHpcSubmit(HpcSubmit):
                         self.overwrite_request.name), alert_type="danger", timeout=False)
                 return
             except EnvironmentProfile.DoesNotExist:
-                self._loading(True)
                 # Creating a new one
                 self.overwrite_request = None
                 version = self.environment_variables[self.version_environment_variable]
@@ -273,7 +268,6 @@ class TethysHpcSubmit(HpcSubmit):
         self._load_profiles()
         self.environment_profile = self.save_name
         self._alert("Successfully saved.", alert_type="success")
-        self._loading(False)
         self.cancel_save()
 
     def _alert(self, message, alert_type="info", timeout=True):
@@ -297,11 +291,66 @@ class TethysHpcSubmit(HpcSubmit):
             self.cb.stop()
         self.cb = None
 
+    def _parse_pbs_body(self, body):
+        """
+        return the modules and environment
+        variables parsed from pbs file contents.
+        """
+        tokenize = [line.rstrip().split() for line in body.split("\n")]
+
+        modules_to_load = []
+        modules_to_unload = []
+
+        env_vars = {}
+
+        for line in tokenize:
+            # Get modules
+            if len(line) > 2 and line[0] == "module":
+
+                if line[1] == "load":
+                    modules_to_load.extend(line[2:])
+                elif line[1] == "unload":
+                    modules_to_unload.extend(line[2:])
+                elif line[1] == "swap" and len(line) > 3:
+                    modules_to_unload.append(line[2])
+                    modules_to_load.append(line[3])
+
+            # Get environment variables
+            if len(line) > 1 and line[0] == "export":
+                # Add environment variable
+                var_name = line[1].split("=")[0]
+                # Refuse everything to the right of the first equals sign
+                value = '='.join(line[1].split("=")[1:])
+                env_vars[var_name] = value
+
+        return {"modules_to_load": modules_to_load,
+                "modules_to_unload": modules_to_unload,
+                "environment_variables": env_vars}
+
+    def _parse_pbs_directives(self, body):
+        """
+        Returns a dictionary of the directives
+        specified in a PBS script
+        """
+        # Get general directives
+        matches = re.findall('#PBS -(.*)', body)
+        directives = {k: v for k, v in [(i.split() + [''])[:2] for i in matches]}
+        # Get l directives
+        l_matches = re.findall('#PBS -l (.*)', body)
+        d = dict()
+        for match in l_matches:
+            if 'walltime' in match:
+                d['walltime'] = match.split('=')[1]
+            else:
+                d.update({k: v for k, v in [i.split('=') for i in l_matches[0].split(':')]})
+
+        directives['l'] = d
+        return directives
+
     def _populate_profile_from_saved(self, name):
         """
         Load profile from db and populate params
         """
-        self._loading(True)
         profile = self.get_profile(name=name)
 
         if not profile:
@@ -314,7 +363,59 @@ class TethysHpcSubmit(HpcSubmit):
         self.environment_variables = OrderedDict(json.loads(profile.environment_variables))
         self.notification_email = profile.email or ''
         self.validate_version()
-        self._loading(False)
+
+    @param.depends("uit_client", watch=True)
+    def update_pbs_select(self):
+        self.select_pbs.file_browser = HpcFileBrowser(self.uit_client, delayed_init=False,
+                patterns=['*.pbs', '*.sh'])
+        self.select_pbs.show_browser = False
+
+    @param.depends("local_pbs_content", watch=True)
+    def parse_local_pbs(self):
+        self.loading = True
+        pbs_body = str(self.local_pbs_content.decode('ascii'))
+        self.populate_from_pbs(pbs_body)
+        self.loading = False
+
+    def parse_remote_pbs(self, e):
+        pbs_file_path = e.obj.file_path or ''
+        if pbs_file_path.endswith('.pbs') or pbs_file_path.endswith('.sh'):
+            self.loading = True
+            pbs_body = self.uit_client.call(f'cat {pbs_file_path}')
+            self.populate_from_pbs(pbs_body)
+            self.loading = False
+            self.select_pbs.show_browser = False
+
+    def populate_from_pbs(self, pbs_body):
+        parsed_pbs = self._parse_pbs_body(pbs_body)
+        for module_prefix in parsed_pbs["modules_to_load"]:
+            for found_module in self.param.modules_to_load.objects:
+                if found_module.startswith(module_prefix):
+                    self.modules_to_load = self.modules_to_load + [found_module,]
+                    break
+        for module_prefix in parsed_pbs["modules_to_unload"]:
+            for found_module in self.param.modules_to_unload.objects:
+                if found_module.startswith(module_prefix):
+                    self.modules_to_unload = self.modules_to_unload + [found_module,]
+                    break
+
+        new_env_vars = self.environment_variables.copy()
+        for k, v in parsed_pbs["environment_variables"].items():
+            new_env_vars[k] = v
+        self.environment_variables = OrderedDict(new_env_vars)
+
+        # Load directives
+        directives = self._parse_pbs_directives(pbs_body)
+        self.hpc_subproject = directives.get('A') or self.hpc_subproject
+        if directives.get('l'):
+            self.nodes = int(directives['l']['select'])
+            self.processes_per_node = int(directives['l']['ncpus'])
+            self.wall_time = directives['l']['walltime']
+        self.queue = directives.get('q') or self.queue
+        self.notification_email = directives.get('M') or self.notification_email
+        if directives.get('m'):
+            self.notify_start = 'b' in directives['m']
+            self.notify_end = 'e' in directives['m']
 
     def pbs_options_view(self):
         self.pbs_options_pane = super().pbs_options_view()
@@ -342,10 +443,14 @@ class TethysHpcSubmit(HpcSubmit):
 
         options = super().advanced_options_view()
         # Insert profile panel into view
-        options.insert(0, pn.Param(
-            self,
-            parameters=["environment_profile"],
-            show_name=False))
+        options.insert(0, pn.Row(
+            pn.Param(self,
+                     parameters=["environment_profile"],
+                     show_name=False),
+            pn.Card(self.pbs_select_panel, title="From PBS Script",
+                    collapsed=True, margin=(20, 0, 0, 20))
+        ))
+
         options.extend((self.save_panel, self.alert, pn.Card(
             self.profile_management_panel, title='Manage Profiles',
             collapsed=True,
@@ -416,3 +521,14 @@ class TethysHpcSubmit(HpcSubmit):
                 self.param.save_profile_btn,
                 widgets={'save_profile_btn': {'button_type': 'success', 'width': 200}}
             )
+
+    def pbs_select_panel(self):
+        return pn.Column(
+            pn.Row(
+                pn.pane.HTML("<label class=\"bk\">Upload local script:</label>"),
+                pn.Param(self.param.local_pbs_content,
+                         widgets={"local_pbs_content": self.local_select_pbs}),
+                ),
+            pn.pane.HTML("<label class=\"bk\">Select remote script:</label>"),
+            pn.layout.WidgetBox(self.select_pbs.panel),
+        )
