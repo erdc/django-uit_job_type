@@ -178,7 +178,7 @@ class TethysHpcSubmit(HpcSubmit):
         # Create default profile for user if one does not exist
         if len(profiles) == 0:
             log.info("Creating default profile")
-            self.load_config_file()
+            self.update_configurable_hpc_parameters()
             env_var_json = json.dumps(self.environment_variables)
             modules = {
                     "modules_to_load": self.modules_to_load,
