@@ -8,13 +8,14 @@ import panel as pn
 
 from django.contrib.auth.models import User
 from uit_plus_job.models import UitPlusJob, EnvironmentProfile
-from uit.gui_tools import HpcSubmit, FileSelector, HpcFileBrowser
+from uit.gui_tools.submit import HpcSubmit, PbsScriptAdvancedInputs
+from uit.gui_tools import FileSelector, HpcFileBrowser
 
 
 log = logging.getLogger(__name__)
 
 
-class TethysHpcSubmit(HpcSubmit):
+class TethysProfileManagement(PbsScriptAdvancedInputs):
     tethys_user = param.ClassSelector(User)
     environment_profile = param.ObjectSelector(label="Load Environment Profile")
     environment_profile_delete = param.ObjectSelector(label="Environment Profile to Delete")
@@ -24,19 +25,18 @@ class TethysHpcSubmit(HpcSubmit):
     version = param.ObjectSelector(label='Set Version Default', precedence=1)
     show_save_panel = param.Boolean()
     show_delete_panel = param.Boolean()
-    save_profile_btn = param.Action(lambda self: self.update_save_panel(), label='Save Current Profile', precedence=1)
-    save_btn = param.Action(lambda self: self._save_current_profile(), label='Save')
-    cancel_save_btn = param.Action(lambda self: self.cancel_save(), label='Cancel')
     delete_profile_btn = param.Action(lambda self: self.update_delete_panel(True), label='Delete Selected Profile')
-    delete_btn = param.Action(lambda self: self._delete_current_profile(), label='Delete')
-    cancel_delete_btn = param.Action(lambda self: self.update_delete_panel(False), label='Cancel')
-    local_pbs_content = param.ClassSelector(bytes)
+    software = param.String()
+    notification_email = param.String(label='Notification E-mail')
+    selected_version = param.String()
+    load_type = param.ObjectSelector(
+        default='Load Saved Profile', objects=['Load Saved Profile', 'Load Profile from PBS Script']
+    )
+    pbs_body = param.String()
 
     # Parameters to override in subclass
     get_versions = param.Action(lambda uit_client: [], precedence=-1)
     version_environment_variable = 'VERSION'
-    custom_logs = None
-    redirect_url = '/'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -47,18 +47,73 @@ class TethysHpcSubmit(HpcSubmit):
         self.no_version_profiles_alert = pn.pane.Alert(
             'No profiles have been created for the selected version',
             alert_type='warning', css_classes=['hidden'], margin=(0, 5, 20, 5))
+        self.profile_management_card = pn.Card(
+            self.profile_management_panel, title='Manage Profiles',
+            collapsed=False,
+            sizing_mode='stretch_width',
+        )
+        self.revert_btn = pn.widgets.Button(
+            name='Revert', button_type='primary', width=100
+        )
+        self.revert_btn.on_click(self.revert)
+        self.profile_panel = pn.Column()
 
-        # Remote pbs selector
-        self.select_pbs = FileSelector(
+    @param.depends('notification_email', 'environment_variables', 'modules_to_load', 'modules_to_unload', watch=True)
+    def update_revert(self):
+        self.revert_btn.disabled = False
+
+    def load_profile_column(self):
+        load_type = pn.widgets.RadioButtonGroup.from_param(self.param.load_type, width=300)
+        environment_profile = pn.widgets.Select.from_param(self.param.environment_profile, width=300, visible=True)
+        code = 'prof_col.css_classes.push("pn-loading", "arcs"); prof_col.properties.css_classes.change.emit();'
+        environment_profile.jscallback(args={'prof_col': self.profile_panel}, value=code)
+
+        pbs_script_type = pn.widgets.RadioButtonGroup(options=['Upload Local Script', 'Select Script on HPC'],
+                                                      width=300, visible=False)
+        file_upload = pn.widgets.FileInput(accept='.sh,.pbs', visible=False)
+        file_upload.param.watch(self._parse_local_pbs, 'value')
+
+        select_pbs = FileSelector(
             help_text='Load environment from a PBS file',
         )
+        select_pbs.param.watch(self._parse_remote_pbs, 'file_path')
+        select_pbs.file_browser = HpcFileBrowser(self.uit_client, delayed_init=False, patterns=['*.pbs', '*.sh'])
+        select_pbs.show_browser = True
+        fbp = select_pbs.panel
+        fbp.visible = False
 
-        self.select_pbs.param.watch(self.parse_remote_pbs, 'file_path')
+        args = {
+            'profile_select': environment_profile,
+            'pbs_script_type': pbs_script_type,
+            'file_upload': file_upload,
+            'fbp': fbp,
+        }
 
-        # Local pbs selector
-        self.local_select_pbs = pn.widgets.FileInput(accept=".sh,.pbs")
+        load_type.jscallback(args=args, value='''
+        if(this.active==0){
+            profile_select.visible = true;
+            pbs_script_type.visible = file_upload.visible = fbp.visible = false;
+        }else{
+            fbp.visible = pbs_script_type.active==1;
+            file_upload.visible = pbs_script_type.active==0;
+            profile_select.visible = false;
+            pbs_script_type.visible = true;
+        }
+        ''')
+        pbs_script_type.jscallback(
+            args=args,
+            value='fbp.visible=pbs_script_type.active==1; file_upload.visible=this.active==0;'
+        )
 
-        self.pbs_options_pane = None
+        return pn.Column(
+            load_type,
+            pbs_script_type,
+            environment_profile,
+            file_upload,
+            fbp,
+            pn.layout.Divider(),
+            width=800
+        )
 
     def get_profiles(self, version=None):
         kwargs = dict(
@@ -89,7 +144,7 @@ class TethysHpcSubmit(HpcSubmit):
         )
 
     @param.depends('uit_client', watch=True)
-    def initialize_versions(self):
+    def update_uit_dependant_options(self):
         self.param.version.objects = ['System Default'] + self.get_versions(self.uit_client)
         self.version = 'System Default'
 
@@ -111,29 +166,27 @@ class TethysHpcSubmit(HpcSubmit):
             if 'hidden' in self.no_version_profiles_alert.css_classes:
                 self.no_version_profiles_alert.css_classes.remove('hidden')
 
-    def update_save_panel(self):
+    def update_save_panel(self, e):
         self.save_name = self.environment_profile
         self.show_save_panel = True
 
     def update_delete_panel(self, should_show):
         self.show_delete_panel = should_show
 
-    def cancel_save(self):
+    def cancel_save(self, e=None):
         self.save_name = ''
         self.show_save_panel = False
+        self.reset_loading()
         if self.overwrite_request:
             self._clear_alert()
+            self.overwrite_request = None
 
-    def set_pbs_options_alert(self, msg, alert_type='warning'):
-        self.pbs_options_pane[1] = pn.pane.Alert(msg, alert_type=alert_type) if msg else None
-
-    def validate_version(self):
-        if self.environment_variables.get(self.version_environment_variable) != self.selected_version:
-            self.set_pbs_options_alert(
-                f'The selected profile does not match the selected version ({self.selected_version}). '
-                f'Please select a compatible profile, or go the the "Environment" tab to create a new profile.')
+    def revert(self, e):
+        if self.load_type == self.param.load_type.objects[0]:
+            self.select_profile()
         else:
-            self.set_pbs_options_alert(None)
+            self._populate_from_pbs()
+        self.param.trigger('show_save_panel')
 
     @param.depends('environment_profile_version', watch=True)
     def set_default(self):
@@ -148,20 +201,6 @@ class TethysHpcSubmit(HpcSubmit):
             f'Default profile for version {self.version} is now set to {self.environment_profile_version}'
         )
         self.update_version_profiles()
-
-    @param.depends('disable_validation', 'validated')
-    def action_button(self):
-        row = super().action_button()
-        for btn in row:
-            if btn.name in ['Submit', 'Cancel']:
-                btn.js_on_click(code=f'setTimeout(function(){{window.location.href="{self.redirect_url}";}}, 1000)')
-
-        return row
-
-    def submit(self, custom_logs=None):
-        job = UitPlusJob.instance_from_pbs_job(self.job, self.tethys_user)
-        job.custom_logs = custom_logs or self.custom_logs
-        job.execute()
 
     @param.depends("environment_profile", watch=True)
     def select_profile(self):
@@ -181,19 +220,20 @@ class TethysHpcSubmit(HpcSubmit):
             self.update_configurable_hpc_parameters()
             env_var_json = json.dumps(self.environment_variables)
             modules = {
-                    "modules_to_load": self.modules_to_load,
-                    "modules_to_unload": self.modules_to_unload
+                "modules_to_load": self.modules_to_load,
+                "modules_to_unload": self.modules_to_unload
             }
 
             saving_profile = EnvironmentProfile(
-                    user=self.tethys_user,
-                    environment_variables=env_var_json,
-                    modules=modules,
-                    hpc_system=self.uit_client.system,
-                    software=self.software,
-                    name="system-default",
-                    default_for_versions=[],
-                    user_default=True)
+                user=self.tethys_user,
+                environment_variables=env_var_json,
+                modules=modules,
+                hpc_system=self.uit_client.system,
+                software=self.software,
+                name="system-default",
+                default_for_versions=[],
+                user_default=True
+            )
             saving_profile.save()
             profiles = [saving_profile.name]
 
@@ -205,7 +245,7 @@ class TethysHpcSubmit(HpcSubmit):
                 setattr(self, attr, self.profiles[0])
         self.update_version_profiles()
 
-    def _delete_current_profile(self, event=None):
+    def _delete_current_profile(self, e=None):
         log.info("Deleting profile {}".format(self.environment_profile_delete))
 
         del_profile = self.get_profile(name=self.environment_profile_delete)
@@ -218,13 +258,13 @@ class TethysHpcSubmit(HpcSubmit):
         self._populate_profile_from_saved(self.profiles[0])
         self.update_delete_panel(False)
 
-    def _save_current_profile(self, event=None):
+    def _save_current_profile(self, e=None):
         log.info("Saving profile")
 
         env_var_json = json.dumps(self.environment_variables)
         modules = {
-                "modules_to_load": self.modules_to_load,
-                "modules_to_unload": self.modules_to_unload
+            "modules_to_load": self.modules_to_load,
+            "modules_to_unload": self.modules_to_unload
         }
 
         # Check to see if we have already loaded this model to overwrite
@@ -244,7 +284,8 @@ class TethysHpcSubmit(HpcSubmit):
                 self.overwrite_request = overwrite_profile
                 # Ask for confirmation before continuing
                 self._alert("Are you sure you want to overwrite profile {}? Press save again to confirm.".format(
-                        self.overwrite_request.name), alert_type="danger", timeout=False)
+                    self.overwrite_request.name), alert_type="danger", timeout=False)
+                self.param.trigger('show_save_panel')
                 return
             except EnvironmentProfile.DoesNotExist:
                 # Creating a new one
@@ -296,7 +337,7 @@ class TethysHpcSubmit(HpcSubmit):
         return the modules and environment
         variables parsed from pbs file contents.
         """
-        tokenize = [line.rstrip().split() for line in body.split("\n")]
+        tokenize = [line.rstrip().split() for line in body.splitlines()]
 
         modules_to_load = []
         modules_to_unload = []
@@ -362,101 +403,36 @@ class TethysHpcSubmit(HpcSubmit):
         self.modules_to_unload = modules["modules_to_unload"]
         self.environment_variables = OrderedDict(json.loads(profile.environment_variables))
         self.notification_email = profile.email or ''
-        self.validate_version()
+        self.reset_loading()
 
-    @param.depends("uit_client", watch=True)
-    def update_pbs_select(self):
-        self.select_pbs.file_browser = HpcFileBrowser(self.uit_client, delayed_init=False,
-                patterns=['*.pbs', '*.sh'])
-        self.select_pbs.show_browser = False
+    def _parse_local_pbs(self, e):
+        self.pbs_body = str(e.new.decode('ascii'))
+        self._populate_from_pbs()
 
-    @param.depends("local_pbs_content", watch=True)
-    def parse_local_pbs(self):
-        self.loading = True
-        pbs_body = str(self.local_pbs_content.decode('ascii'))
-        self.populate_from_pbs(pbs_body)
-        self.loading = False
-
-    def parse_remote_pbs(self, e):
+    def _parse_remote_pbs(self, e):
         pbs_file_path = e.obj.file_path or ''
         if pbs_file_path.endswith('.pbs') or pbs_file_path.endswith('.sh'):
-            self.loading = True
-            pbs_body = self.uit_client.call(f'cat {pbs_file_path}')
-            self.populate_from_pbs(pbs_body)
-            self.loading = False
-            self.select_pbs.show_browser = False
+            self.pbs_body = self.uit_client.call(f'cat {pbs_file_path}')
+            self._populate_from_pbs()
+            e.obj.show_browser = False
 
-    def populate_from_pbs(self, pbs_body):
-        parsed_pbs = self._parse_pbs_body(pbs_body)
-        for module_prefix in parsed_pbs["modules_to_load"]:
-            for found_module in self.param.modules_to_load.objects:
-                if found_module.startswith(module_prefix):
-                    self.modules_to_load = self.modules_to_load + [found_module,]
-                    break
-        for module_prefix in parsed_pbs["modules_to_unload"]:
-            for found_module in self.param.modules_to_unload.objects:
-                if found_module.startswith(module_prefix):
-                    self.modules_to_unload = self.modules_to_unload + [found_module,]
-                    break
+    def _populate_from_pbs(self):
+        parsed_pbs = self._parse_pbs_body(self.pbs_body)
+        self.modules_to_load = self._validate_modules(self.param.modules_to_load.objects, parsed_pbs["modules_to_load"])
+        self.modules_to_unload = self._validate_modules(
+            self.param.modules_to_unload.objects, parsed_pbs["modules_to_unload"]
+        )
 
         new_env_vars = self.environment_variables.copy()
         for k, v in parsed_pbs["environment_variables"].items():
-            new_env_vars[k] = v
+            new_env_vars[k] = v.strip('"')
         self.environment_variables = OrderedDict(new_env_vars)
+        self.reset_loading()
 
-        # Load directives
-        directives = self._parse_pbs_directives(pbs_body)
-        self.hpc_subproject = directives.get('A') or self.hpc_subproject
-        if directives.get('l'):
-            self.nodes = int(directives['l']['select'])
-            self.processes_per_node = int(directives['l']['ncpus'])
-            self.wall_time = directives['l']['walltime']
-        self.queue = directives.get('q') or self.queue
-        self.notification_email = directives.get('M') or self.notification_email
-        if directives.get('m'):
-            self.notify_start = 'b' in directives['m']
-            self.notify_end = 'e' in directives['m']
-
-    def pbs_options_view(self):
-        self.pbs_options_pane = super().pbs_options_view()
-        self.pbs_options_pane.insert(0, pn.Param(self.param.environment_profile, widgets={'environment_profile': {'width': 300}}))
-        self.pbs_options_pane.insert(1, None)
-        self.pbs_options_pane.insert(2, pn.layout.Divider(width=300))
-        self.pbs_options_pane.sizing_mode = 'stretch_width'
-        self.pbs_options_pane.max_width = 800
-
-        return self.pbs_options_pane
-
-    def advanced_options_view(self):
-        """
-        Overrides HpcSubmit function in order to
-        add a panel to select environment profiles.
-        """
-
-        if not self.profiles:
-            self._load_profiles()
-
-        # Load default profile
-        default = self.get_default_profile(self.selected_version, use_general_default=True)
-        if default is not None:
-            self._populate_profile_from_saved(default.name)
-
-        options = super().advanced_options_view()
-        # Insert profile panel into view
-        options.insert(0, pn.Row(
-            pn.Param(self,
-                     parameters=["environment_profile"],
-                     show_name=False),
-            pn.Card(self.pbs_select_panel, title="From PBS Script",
-                    collapsed=True, margin=(20, 0, 0, 20))
-        ))
-
-        options.extend((self.save_panel, self.alert, pn.Card(
-            self.profile_management_panel, title='Manage Profiles',
-            collapsed=True,
-            sizing_mode='stretch_width',
-        )))
-        return options
+    def reset_loading(self):
+        self.revert_btn.disabled = True
+        self.profile_panel.css_classes = ['temp']
+        self.profile_panel.css_classes = []
 
     def profile_management_panel(self):
         return pn.Row(
@@ -473,62 +449,176 @@ class TethysHpcSubmit(HpcSubmit):
                 ),
                 self.no_version_profiles_alert,
             ),
-            pn.Column(
-                self.param.environment_profile_delete,
-                self.delete_panel,
-            ),
+            self.delete_panel,
         )
 
     @param.depends('show_delete_panel')
     def delete_panel(self):
         if self.show_delete_panel:
+            delete_btn = pn.widgets.Button(name='Delete', button_type='danger', width=100)
+            delete_btn.on_click(self._delete_current_profile)
+            cancel_btn = pn.widgets.Button(name='Cancel', button_type='primary', width=100)
+            cancel_btn.on_click(lambda e: self.update_delete_panel(False))
+
+            code = 'o.disabled=true; ' \
+                   'btn.css_classes.push("pn-loading", "arcs"); btn.properties.css_classes.change.emit();'
+
+            delete_btn.js_on_click(args={'btn': delete_btn, 'o': cancel_btn}, code=code)
+            cancel_btn.js_on_click(args={'btn': cancel_btn, 'o': delete_btn}, code=code)
+
             return pn.Column(
+                self.param.environment_profile_delete,
                 pn.pane.Alert('Are you sure you want to delete the selected profile? This action cannot be undone.',
                               alert_type='danger'),
-                pn.Param(
-                    self,
-                    parameters=['delete_btn', 'cancel_delete_btn'],
-                    widgets={'delete_btn': {'button_type': 'danger', 'width': 100},
-                             'cancel_delete_btn': {'button_type': 'success', 'width': 100}},
-                    default_layout=pn.Row,
-                    show_name=False,
-                )
+                pn.Row(delete_btn, cancel_btn, align='end')
             )
         else:
-            return pn.Param(
-                self.param.delete_profile_btn,
-                widgets={'delete_profile_btn': {'button_type': 'danger', 'width': 200, 'margin': (18, 0, 0, 0)}},
+            delete_btn = pn.widgets.Button(name='Delete Selected Profile', button_type='danger', width=200)
+            delete_btn.on_click(lambda e: self.update_delete_panel(True))
+            code = 'btn.css_classes.push("pn-loading", "arcs"); btn.properties.css_classes.change.emit();'
+            delete_btn.js_on_click(args={'btn': delete_btn}, code=code)
+
+            return pn.Column(
+                self.param.environment_profile_delete,
+                pn.Row(delete_btn, align='end')
             )
 
     @param.depends('show_save_panel')
     def save_panel(self):
         if self.show_save_panel:
+            save_btn = pn.widgets.Button(name='Save', button_type='success', width=100)
+            save_btn.on_click(self._save_current_profile)
+            cancel_btn = pn.widgets.Button(name='Cancel', button_type='danger', width=100)
+            cancel_btn.on_click(self.cancel_save)
+
+            code = 'o.disabled=true; ' \
+                   'btn.css_classes.push("pn-loading", "arcs"); btn.properties.css_classes.change.emit();'
+
+            save_btn.js_on_click(args={'btn': save_btn, 'o': cancel_btn}, code=code)
+            cancel_btn.js_on_click(args={'btn': cancel_btn, 'o': save_btn}, code=code)
+
             return pn.Column(
-                pn.pane.Alert('The notification e-mail address from the the '
-                              'PBS Options tab will also be saved as part of this profile.', alert_type='info'),
-                self.param.save_name,
-                pn.Param(
-                    self,
-                    parameters=['save_btn', 'cancel_save_btn'],
-                    widgets={'save_btn': {'button_type': 'success', 'width': 100},
-                             'cancel_save_btn': {'button_type': 'danger', 'width': 100}},
-                    default_layout=pn.Row,
-                    show_name=False,
-                )
+                pn.Column(
+                    self.param.save_name,
+                    pn.Row(save_btn, cancel_btn, align='end'),
+                    align='end',
+                ),
+                sizing_mode='stretch_width',
             )
         else:
-            return pn.Param(
-                self.param.save_profile_btn,
-                widgets={'save_profile_btn': {'button_type': 'success', 'width': 200}}
+            self.revert_btn.css_classes = ['temp']
+            self.revert_btn.css_classes = []
+
+            save_btn = pn.widgets.Button(name='Save Current Profile', button_type='success', width=200)
+            save_btn.on_click(self.update_save_panel)
+
+            code = 'btn.css_classes.push("pn-loading", "arcs"); btn.properties.css_classes.change.emit();'
+
+            save_btn.js_on_click(args={'btn': save_btn, 'o': self.revert_btn}, code=code)
+            self.revert_btn.js_on_click(args={'btn': self.revert_btn, 'o': save_btn}, code=code)
+
+            return pn.Column(
+                pn.Row(save_btn, self.revert_btn, align='end'),
+                sizing_mode='stretch_width'
             )
 
-    def pbs_select_panel(self):
-        return pn.Column(
-            pn.Row(
-                pn.pane.HTML("<label class=\"bk\">Upload local script:</label>"),
-                pn.Param(self.param.local_pbs_content,
-                         widgets={"local_pbs_content": self.local_select_pbs}),
-                ),
-            pn.pane.HTML("<label class=\"bk\">Select remote script:</label>"),
-            pn.layout.WidgetBox(self.select_pbs.panel),
+    def advanced_options_view(self):
+        """
+        Overrides HpcSubmit function in order to
+        add a panel to select environment profiles.
+        """
+
+        if not self.profiles:
+            self._load_profiles()
+
+        # Load default profile
+        default = self.get_default_profile(self.selected_version, use_general_default=True)
+        if default is not None:
+            self._populate_profile_from_saved(default.name)
+
+        self.profile_panel = super().advanced_options_view()
+        self.profile_panel.insert(0, self.param.notification_email)
+        self.profile_panel.append(self.save_panel)
+
+        options = pn.Column(
+            self.load_profile_column(),
+            self.profile_panel,
+            self.alert,
+            pn.layout.Divider(),
+            self.profile_management_card,
+            name='Environment',
         )
+        return options
+
+    def panel(self):
+        try:
+            options = self.advanced_options_view()
+            options.insert(0, '# Environment Profiles')
+            return options
+        except Exception as e:
+            log.exception(e)
+
+
+class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
+    custom_logs = None
+    redirect_url = '/'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pbs_options_pane = None
+        self.profile_management_card.collapsed = True
+
+    def set_pbs_options_alert(self, msg, alert_type='warning'):
+        self.pbs_options_pane[1] = pn.pane.Alert(msg, alert_type=alert_type) if msg else None
+
+    def validate_version(self):
+        if self.environment_variables.get(self.version_environment_variable) != self.selected_version:
+            self.set_pbs_options_alert(
+                f'The selected profile does not match the selected version ({self.selected_version}). '
+                f'Please select a compatible profile, or go the the "Environment" tab to create a new profile.')
+        else:
+            self.set_pbs_options_alert(None)
+
+    def _populate_profile_from_saved(self, name):
+        super()._populate_profile_from_saved(name)
+        self.validate_version()
+
+    def _populate_from_pbs(self, pbs_body):
+        super()._populate_from_pbs(pbs_body)
+
+        # Load directives
+        directives = self._parse_pbs_directives(pbs_body)
+        self.hpc_subproject = directives.get('A') or self.hpc_subproject
+        if directives.get('l'):
+            self.nodes = int(directives['l']['select'])
+            self.processes_per_node = int(directives['l']['ncpus'])
+            self.wall_time = directives['l']['walltime']
+        self.queue = directives.get('q') or self.queue
+        self.notification_email = directives.get('M') or self.notification_email
+        if directives.get('m'):
+            self.notify_start = 'b' in directives['m']
+            self.notify_end = 'e' in directives['m']
+
+    def pbs_options_view(self):
+        self.pbs_options_pane = super().pbs_options_view()
+        self.pbs_options_pane.insert(0, pn.widgets.Select.from_param(self.param.environment_profile, width=300))
+        self.pbs_options_pane.insert(1, None)
+        self.pbs_options_pane.insert(2, pn.layout.Divider(width=300))
+        self.pbs_options_pane.sizing_mode = 'stretch_width'
+        self.pbs_options_pane.max_width = 800
+
+        return self.pbs_options_pane
+
+    @param.depends('disable_validation', 'validated')
+    def action_button(self):
+        row = super().action_button()
+        for btn in row:
+            if btn.name in ['Submit', 'Cancel']:
+                btn.js_on_click(code=f'setTimeout(function(){{window.location.href="{self.redirect_url}";}}, 1000)')
+
+        return row
+
+    def submit(self, custom_logs=None):
+        job = UitPlusJob.instance_from_pbs_job(self.job, self.tethys_user)
+        job.custom_logs = custom_logs or self.custom_logs
+        job.execute()

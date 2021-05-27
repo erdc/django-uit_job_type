@@ -688,6 +688,7 @@ class UitPlusJob(PbsScript, TethysJob):
         """  # noqa: E501
 
         # Remove local workspace
+        log.warning(f'Removing {self.workspace}')
         thread = threading.Thread(target=shutil.rmtree, args=(self.workspace, True))
         thread.daemon = True
         thread.start()
