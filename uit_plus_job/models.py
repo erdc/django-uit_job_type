@@ -719,6 +719,23 @@ class UitPlusJob(PbsScript, TethysJob):
         self.archived = True
         self.save()
 
+    def restore(self):
+        """Restore the job work directory from to archive server.
+
+        Returns:
+            bool: True. Always.
+        """
+        archive_filename = f"job_{self.remote_workspace_suffix}.run_files.tar.gz"
+
+        self.uit_client.call(f"archive get -C {self.archive_dir} {archive_filename}",
+                             working_dir=self.working_dir)
+
+        self.uit_client.call(f"tar -xzf {archive_filename}",
+                             working_dir=self.working_dir)
+
+        self.archived = False
+        self.save()
+
 
 @receiver(pre_delete, sender=UitPlusJob)
 def uit_job_pre_delete(sender, instance, using, **kwargs):
