@@ -236,6 +236,7 @@ class UitPlusJob(PbsScript, TethysJob):
     _remote_workspace = models.TextField(blank=True)
     _remote_workspace_id = models.CharField(max_length=100)
     qstat = JSONField(null=True)
+    archived = models.BooleanField(default=False)
 
     # pbs_script vars
     project_id = models.CharField(max_length=1024, null=False)
@@ -707,6 +708,47 @@ class UitPlusJob(PbsScript, TethysJob):
             thread.start()
             log.info(f"Executing command '{cmd}' on {self.system}")
         return True
+
+    def archive(self):
+        """Archive all files associated with this job.
+
+        This job is compressed into a tar file and then pushed
+        to the archive directory.
+
+        Returns:
+            bool: True. Always.
+        """
+        archive_filename = f"job_{self.remote_workspace_suffix}.run_files.tar.gz"
+        # Compress work dir and push to archive server
+        self.uit_client.call(f"tar -czf {archive_filename} *",
+                             working_dir=self.working_dir)
+        # Archive archive
+        self.uit_client.call(f"archive put -p -C {self.archive_dir} {archive_filename}",
+                             working_dir=self.working_dir)
+
+        # Delete archive on workdir
+        self.uit_client.call(f"rm {archive_filename}",
+                             working_dir=self.working_dir)
+
+        self.archived = True
+        self.save()
+
+    def restore(self):
+        """Restore the job work directory from to archive server.
+
+        Returns:
+            bool: True. Always.
+        """
+        archive_filename = f"job_{self.remote_workspace_suffix}.run_files.tar.gz"
+
+        self.uit_client.call(f"archive get -C {self.archive_dir} {archive_filename}",
+                             working_dir=self.working_dir)
+
+        self.uit_client.call(f"tar -xzf {archive_filename}",
+                             working_dir=self.working_dir)
+
+        self.archived = False
+        self.save()
 
 
 @receiver(pre_delete, sender=UitPlusJob)
