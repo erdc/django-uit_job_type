@@ -30,7 +30,8 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     notification_email = param.String(label='Notification E-mail')
     selected_version = param.String()
     load_type = param.ObjectSelector(
-        default='Load Saved Profile', objects=['Load Saved Profile', 'Load Profile from PBS Script']
+        default='Load Saved Profile',
+        objects=['Create New Profile', 'Load Saved Profile', 'Load Profile from PBS Script']
     )
     pbs_body = param.String()
 
@@ -65,9 +66,6 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     def load_profile_column(self):
         load_type = pn.widgets.RadioButtonGroup.from_param(self.param.load_type, width=300)
         environment_profile = pn.widgets.Select.from_param(self.param.environment_profile, width=300, visible=True)
-        code = 'prof_col.css_classes.push("pn-loading", "arcs"); prof_col.properties.css_classes.change.emit();'
-        environment_profile.jscallback(args={'prof_col': self.profile_panel}, value=code)
-
         pbs_script_type = pn.widgets.RadioButtonGroup(options=['Upload Local Script', 'Select Script on HPC'],
                                                       width=300, visible=False)
         file_upload = pn.widgets.FileInput(accept='.sh,.pbs', visible=False)
@@ -83,22 +81,32 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         fbp.visible = False
 
         args = {
+            'prof_col': self.profile_panel,
             'profile_select': environment_profile,
             'pbs_script_type': pbs_script_type,
             'file_upload': file_upload,
             'fbp': fbp,
         }
 
-        load_type.jscallback(args=args, value='''
-        if(this.active==0){
+        code = 'prof_col.css_classes.push("pn-loading", "arcs"); prof_col.properties.css_classes.change.emit();'
+        environment_profile.jscallback(args=args, value=code)
+
+        load_type.jscallback(args=args, value=f'''
+        if(this.active==0){{
+            profile_select.visible = false;
+            pbs_script_type.visible = file_upload.visible = fbp.visible = false;
+            {code}
+        }}else if(this.active==1){{
             profile_select.visible = true;
             pbs_script_type.visible = file_upload.visible = fbp.visible = false;
-        }else{
+            {code}
+        }}else if(this.active==2){{
             fbp.visible = pbs_script_type.active==1;
             file_upload.visible = pbs_script_type.active==0;
             profile_select.visible = false;
             pbs_script_type.visible = true;
-        }
+            {code}
+        }}
         ''')
         pbs_script_type.jscallback(
             args=args,
@@ -167,7 +175,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 self.no_version_profiles_alert.css_classes.remove('hidden')
 
     def update_save_panel(self, e):
-        self.save_name = self.environment_profile
+        self.save_name = self.environment_profile if self.load_type == self.param.load_type.objects[1] else ''
         self.show_save_panel = True
 
     def update_delete_panel(self, should_show):
@@ -181,10 +189,14 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             self._clear_alert()
             self.overwrite_request = None
 
-    def revert(self, e):
+    @param.depends('load_type', watch=True)
+    def revert(self, e=None):
         if self.load_type == self.param.load_type.objects[0]:
+            self.update_configurable_hpc_parameters()
+            self.reset_loading()
+        elif self.load_type == self.param.load_type.objects[1]:
             self.select_profile()
-        else:
+        elif self.load_type == self.param.load_type.objects[2]:
             self._populate_from_pbs()
         self.param.trigger('show_save_panel')
 
@@ -245,7 +257,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 setattr(self, attr, self.profiles[0])
         self.update_version_profiles()
 
-    def _delete_current_profile(self, e=None):
+    def _delete_selected_profile(self, e=None):
         log.info("Deleting profile {}".format(self.environment_profile_delete))
 
         del_profile = self.get_profile(name=self.environment_profile_delete)
@@ -255,7 +267,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                     alert_type="danger")
 
         self._load_profiles()
-        self._populate_profile_from_saved(self.profiles[0])
+        self.revert()
         self.update_delete_panel(False)
 
     def _save_current_profile(self, e=None):
@@ -270,7 +282,13 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         # Check to see if we have already loaded this model to overwrite
         # and were just asking for confirmation
 
-        if self.overwrite_request is not None and self.overwrite_request.name == self.save_name:
+        if not self.save_name:
+            self.overwrite_request = 1
+            self._alert('You must enter a profile name before you can save.', alert_type='danger')
+            self.param.trigger('show_save_panel')
+            return
+
+        if self.overwrite_request not in (1, None) and self.overwrite_request.name == self.save_name:
             saving_profile = self.overwrite_request
             saving_profile.modules = modules
             saving_profile.environment_variables = env_var_json
@@ -279,9 +297,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         else:
             # Check to see if a profile already exists for this user with the same name
             try:
-                overwrite_profile = self.get_profile(name=self.save_name)
-
-                self.overwrite_request = overwrite_profile
+                self.overwrite_request = self.get_profile(name=self.save_name)
                 # Ask for confirmation before continuing
                 self._alert("Are you sure you want to overwrite profile {}? Press save again to confirm.".format(
                     self.overwrite_request.name), alert_type="danger", timeout=False)
@@ -308,6 +324,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         saving_profile.save()
         self._load_profiles()
         self.environment_profile = self.save_name
+        self.load_type = self.param.load_type.objects[1]
         self._alert("Successfully saved.", alert_type="success")
         self.cancel_save()
 
@@ -423,10 +440,10 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             self.param.modules_to_unload.objects, parsed_pbs["modules_to_unload"]
         )
 
-        new_env_vars = self.environment_variables.copy()
+        new_env_vars = OrderedDict()
         for k, v in parsed_pbs["environment_variables"].items():
             new_env_vars[k] = v.strip('"')
-        self.environment_variables = OrderedDict(new_env_vars)
+        self.environment_variables = new_env_vars
         self.reset_loading()
 
     def reset_loading(self):
@@ -456,7 +473,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     def delete_panel(self):
         if self.show_delete_panel:
             delete_btn = pn.widgets.Button(name='Delete', button_type='danger', width=100)
-            delete_btn.on_click(self._delete_current_profile)
+            delete_btn.on_click(self._delete_selected_profile)
             cancel_btn = pn.widgets.Button(name='Cancel', button_type='primary', width=100)
             cancel_btn.on_click(lambda e: self.update_delete_panel(False))
 
@@ -539,6 +556,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         self.profile_panel = super().advanced_options_view()
         self.profile_panel.insert(0, self.param.notification_email)
         self.profile_panel.append(self.save_panel)
+        self.profile_panel.sizing_mode = 'stretch_width'
 
         options = pn.Column(
             self.load_profile_column(),

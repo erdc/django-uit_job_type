@@ -709,6 +709,10 @@ class UitPlusJob(PbsScript, TethysJob):
             log.info(f"Executing command '{cmd}' on {self.system}")
         return True
 
+    @property
+    def archive_filename(self):
+        return f'job_{self.remote_workspace_id}.run_files.tar.gz'
+
     def archive(self):
         """Archive all files associated with this job.
 
@@ -718,17 +722,11 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             bool: True. Always.
         """
-        archive_filename = f"job_{self.remote_workspace_suffix}.run_files.tar.gz"
+        cmd = f"tar -czf {self.archive_filename} *;" \
+              f"archive put -p -C {self.archive_dir} {self.archive_filename};" \
+              f"rm {self.archive_filename}"
         # Compress work dir and push to archive server
-        self.uit_client.call(f"tar -czf {archive_filename} *",
-                             working_dir=self.working_dir)
-        # Archive archive
-        self.uit_client.call(f"archive put -p -C {self.archive_dir} {archive_filename}",
-                             working_dir=self.working_dir)
-
-        # Delete archive on workdir
-        self.uit_client.call(f"rm {archive_filename}",
-                             working_dir=self.working_dir)
+        self.client.call(cmd, working_dir=self.working_dir)
 
         self.archived = True
         self.save()
@@ -739,13 +737,9 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             bool: True. Always.
         """
-        archive_filename = f"job_{self.remote_workspace_suffix}.run_files.tar.gz"
+        self.client.call(f"archive get -C {self.archive_dir} {self.archive_filename}", working_dir=self.working_dir)
 
-        self.uit_client.call(f"archive get -C {self.archive_dir} {archive_filename}",
-                             working_dir=self.working_dir)
-
-        self.uit_client.call(f"tar -xzf {archive_filename}",
-                             working_dir=self.working_dir)
+        self.client.call(f"tar -xzf {self.archive_filename}", working_dir=self.working_dir)
 
         self.archived = False
         self.save()
