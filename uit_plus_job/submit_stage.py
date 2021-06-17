@@ -637,6 +637,7 @@ class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
         return row
 
     def submit(self, custom_logs=None):
+        self.job.script = self.pbs_script  # update script to ensure it reflects any UI updates
         job = UitPlusJob.instance_from_pbs_job(self.job, self.tethys_user)
         job.custom_logs = custom_logs or self.custom_logs
         job.execute()
