@@ -340,7 +340,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 self.cb.stop()
             self.cb = pn.state.add_periodic_callback(self._clear_alert, period=10000, count=1)
 
-    def _clear_alert(self, event=None):
+    def _clear_alert(self, e=None):
         if 'hidden' not in self.alert.css_classes:
             self.alert.css_classes.append('hidden')
         self.alert.object = ''
@@ -349,12 +349,12 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             self.cb.stop()
         self.cb = None
 
-    def _parse_pbs_body(self, body):
+    def _parse_pbs_body(self):
         """
         return the modules and environment
         variables parsed from pbs file contents.
         """
-        tokenize = [line.rstrip().split() for line in body.splitlines()]
+        tokenize = [line.rstrip().split() for line in self.pbs_body.splitlines()]
 
         modules_to_load = []
         modules_to_unload = []
@@ -385,16 +385,16 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 "modules_to_unload": modules_to_unload,
                 "environment_variables": env_vars}
 
-    def _parse_pbs_directives(self, body):
+    def _parse_pbs_directives(self):
         """
         Returns a dictionary of the directives
         specified in a PBS script
         """
         # Get general directives
-        matches = re.findall('#PBS -(.*)', body)
+        matches = re.findall('#PBS -(.*)', self.pbs_body)
         directives = {k: v for k, v in [(i.split() + [''])[:2] for i in matches]}
         # Get l directives
-        l_matches = re.findall('#PBS -l (.*)', body)
+        l_matches = re.findall('#PBS -l (.*)', self.pbs_body)
         d = dict()
         for match in l_matches:
             if 'walltime' in match:
@@ -434,7 +434,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             e.obj.show_browser = False
 
     def _populate_from_pbs(self):
-        parsed_pbs = self._parse_pbs_body(self.pbs_body)
+        parsed_pbs = self._parse_pbs_body()
         self.modules_to_load = self._validate_modules(self.param.modules_to_load.objects, parsed_pbs["modules_to_load"])
         self.modules_to_unload = self._validate_modules(
             self.param.modules_to_unload.objects, parsed_pbs["modules_to_unload"]
@@ -601,11 +601,11 @@ class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
         super()._populate_profile_from_saved(name)
         self.validate_version()
 
-    def _populate_from_pbs(self, pbs_body):
-        super()._populate_from_pbs(pbs_body)
+    def _populate_from_pbs(self):
+        super()._populate_from_pbs()
 
         # Load directives
-        directives = self._parse_pbs_directives(pbs_body)
+        directives = self._parse_pbs_directives()
         self.hpc_subproject = directives.get('A') or self.hpc_subproject
         if directives.get('l'):
             self.nodes = int(directives['l']['select'])
