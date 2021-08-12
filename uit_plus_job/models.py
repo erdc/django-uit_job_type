@@ -318,6 +318,8 @@ class UitPlusJob(PbsScript, TethysJob):
             user=user,
             label=job.label,
             workspace=job.workspace.as_posix(),
+            description=job.description,
+            extended_properties=job.metadata,
 
             job_id=job.job_id,
             _status=cls.UIT_TO_TETHYS_STATUSES.get(job.status),
@@ -362,6 +364,8 @@ class UitPlusJob(PbsScript, TethysJob):
                 transfer_input_files=self.transfer_input_files,
                 home_input_files=self.home_input_files,
                 archive_input_files=self.archive_input_files,
+                description=self.description,
+                metadata=self.extended_properties,
             )
             j._remote_workspace_id = self._remote_workspace_id
             j._remote_workspace = PurePosixPath(self._remote_workspace)
@@ -402,6 +406,10 @@ class UitPlusJob(PbsScript, TethysJob):
             archive_home = self.get_environment_variable('ARCHIVE_HOME')
             self._archive_dir = os.path.join(archive_home, self.remote_workspace_suffix)
         return self._archive_dir
+
+    @property
+    def workflow_type(self):
+        return self.label.split('/')[-1]
 
     @property
     def client(self):
