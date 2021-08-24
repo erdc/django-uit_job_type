@@ -646,11 +646,6 @@ class UitPlusJob(PbsScript, TethysJob):
         Translates UitJob status to TethysJob status and saves to the database
         """
         if self._status in TethysJob.TERMINAL_STATUSES:
-            # Check to determine archive status
-            archive_stat = self.is_job_archived()
-            if archive_stat != self.archived:
-                self.archived = archive_stat
-                self.save()
             return
 
         try:
