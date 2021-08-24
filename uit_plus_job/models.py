@@ -510,6 +510,11 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         return self.pbs_job.working_dir
 
+    def is_job_archived(self):
+        archive_filename = f"job_{self.remote_workspace_id}.run_files.tar.gz"
+        archive_files = self.client.list_dir(self.archive_dir)['files']
+        return archive_filename in [file['name'] for file in archive_files]
+
     def get_logs(self):
         if isinstance(self.pbs_job, PbsArrayJob):
             logs = {}
@@ -565,12 +570,52 @@ class UitPlusJob(PbsScript, TethysJob):
         self.pbs_job._job_id = None
         self.execute()
 
+    def _archive(self, *args, **kwargs):
+        archive_filename = f"job_{self.remote_workspace_id}.run_files.tar.gz"
+        pbs_script = PbsScript(
+                name="archive_job",
+                project_id=self.pbs_job.script.project_id,
+                num_nodes=1,
+                processes_per_node=1,
+                max_time="01:00:00",
+                queue="transfer",
+                node_type="transfer"
+        )
+        pbs_script.execution_block = (
+            f"tar -czf {archive_filename} *\n"
+            f"archive put -p -C {self.archive_dir} {archive_filename}\n"
+            f"rm {archive_filename}\n"
+        )
+
+        # Create PBS job
+        job = PbsJob(pbs_script, client=self.client, label="archive_"+self.label)
+        job._remote_workspace = self._remote_workspace
+        job._remote_workspace_id = self._remote_workspace_id
+        job.description = "Archive job: " + self.description
+        job_model = type(self).instance_from_pbs_job(job, self.user)
+
+        # Submit job
+        job_model.execute()
+        print("Finished Archiving")
+
+    def remove_archive(self, *args, **kwargs):
+        archive_filename = f"job_{self._remote_workspace_id}.run_files.tar.gz"
+        self.client.call(f"archive rm {Path(self.archive_dir) / archive_filename}")
+        self.archived = False
+        self.save()
+        print("Finished remove")
+
     def _update_status(self):
         """Retrieve a job’s status using the UIT Plus Python client.
 
         Translates UitJob status to TethysJob status and saves to the database
         """
         if self._status in TethysJob.TERMINAL_STATUSES:
+            # Check to determine archive status
+            archive_stat = self.is_job_archived()
+            if archive_stat != self.archived:
+                self.archived = archive_stat
+                self.save()
             return
 
         try:
@@ -730,14 +775,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             bool: True. Always.
         """
-        cmd = f"tar -czf {self.archive_filename} *;" \
-              f"archive put -p -C {self.archive_dir} {self.archive_filename};" \
-              f"rm {self.archive_filename}"
-        # Compress work dir and push to archive server
-        self.client.call(cmd, working_dir=self.working_dir)
-
-        self.archived = True
-        self.save()
+        self._archive()
 
     def restore(self):
         """Restore the job work directory from to archive server.
