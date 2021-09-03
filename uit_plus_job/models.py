@@ -573,7 +573,7 @@ class UitPlusJob(PbsScript, TethysJob):
     def _archive(self, *args, **kwargs):
         archive_filename = f"job_{self.remote_workspace_id}.run_files.tar.gz"
         pbs_script = PbsScript(
-                name="archive_job",
+                name=self.name,
                 project_id=self.pbs_job.script.project_id,
                 num_nodes=1,
                 processes_per_node=1,
@@ -779,15 +779,25 @@ class UitPlusJob(PbsScript, TethysJob):
 
     def restore(self):
         """Restore the job work directory from to archive server.
+        NOTE: This is meant to be called only on an "archive" job.
+        This method replaces the jobs details with that of the
+        new transfer job.
 
         Returns:
             bool: True. Always.
         """
-        self.client.call(f"archive get -C {self.archive_dir} {self.archive_filename}", working_dir=self.working_dir)
+        archive_filename = f"job_{self.remote_workspace_id}.run_files.tar.gz"
 
-        self.client.call(f"tar -xzf {self.archive_filename}", working_dir=self.working_dir)
+        self.execution_block = (
+            f"archive get -p -C {self.archive_dir} {archive_filename}\n"
+            f"tar -xzf {archive_filename}\n"
+            f"rm {archive_filename}\n"
+        )
 
-        self.archived = False
+        # Submit job
+        self.resubmit()
+        print("Restoring")
+
         self.save()
 
 
