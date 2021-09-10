@@ -563,6 +563,7 @@ class UitPlusJob(PbsScript, TethysJob):
 
     def _resubmit(self, *args, **kwargs):
         self.pbs_job._job_id = None
+        self.qstat = None
         self.execute()
 
     def _update_status(self):
