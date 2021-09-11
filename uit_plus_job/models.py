@@ -654,9 +654,9 @@ class UitPlusJob(PbsScript, TethysJob):
                 self.archived = archive_stat
                 self.save()
             # Make status custom if archive job
-            log.debug(self._status)
-            if self.status == 'Complete' and self.extended_properties.get("archived_job_id"):
-                self.status = "Archived"
+            if self._status == 'COM' and self.extended_properties.get("archived_job_id"):
+                self._status = 'OTH'
+                self.extended_properties[self.OTHER_STATUS_KEY] = "Archived"
                 archive_filename = f"job_{self._remote_workspace_id}.run_files.tar.gz"
                 self.status_message = f"Archive at {self.archive_dir / archive_filename}"
             return
