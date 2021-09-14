@@ -626,7 +626,6 @@ class UitPlusJob(PbsScript, TethysJob):
 
         # Submit job
         job_model.execute()
-        print("Finished Archiving")
 
     def remove_archive(self, *args, **kwargs):
         archive_filename = f"job_{self._remote_workspace_id}.run_files.tar.gz"
@@ -641,8 +640,6 @@ class UitPlusJob(PbsScript, TethysJob):
             archived_job.archived = False
             archived_job.save()
 
-        print("Finished remove")
-
     def _update_status(self):
         """Retrieve a job’s status using the UIT Plus Python client.
 
@@ -654,12 +651,6 @@ class UitPlusJob(PbsScript, TethysJob):
             if archive_stat != self.archived:
                 self.archived = archive_stat
                 self.save()
-            # Make status custom if archive job
-            if self._status == 'COM' and self.extended_properties.get("archived_job_id"):
-                self._status = 'OTH'
-                self.extended_properties[self.OTHER_STATUS_KEY] = "Archived"
-                archive_filename = f"job_{self._remote_workspace_id}.run_files.tar.gz"
-                self.status_message = f"Archive at {self.archive_dir / archive_filename}"
             return
 
         try:
@@ -851,7 +842,6 @@ class UitPlusJob(PbsScript, TethysJob):
             try:
                 type(self).objects.get(job_id=job_id)
             except type(self).DoesNotExist:
-                print("Could not find job. Restoring...")
                 # Recreate job
                 job_props = self.extended_properties["archived_job_script"]
                 array_indices = job_props.pop("_array_indices")
