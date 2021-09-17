@@ -6,6 +6,7 @@ import threading
 import inspect
 import logging
 import datetime as dt
+from collections import OrderedDict
 from pathlib import Path, PurePosixPath
 from functools import partial
 from django.db import models
@@ -15,7 +16,7 @@ from django.utils import timezone
 from django.contrib.postgres.fields import ArrayField, JSONField
 from django.contrib.auth.models import User
 from tethys_apps.base.function_extractor import TethysFunctionExtractor
-from uit.exceptions import DpRouteError, UITError
+from uit.exceptions import UITError
 from uit import Client, PbsScript, PbsJob, PbsArrayJob
 from uit.pbs_script import PbsDirective, NODE_TYPES
 from tethys_compute.models.tethys_job import TethysJob
@@ -335,7 +336,6 @@ class UitPlusJob(PbsScript, TethysJob):
             _optional_directives=script._optional_directives,
             _modules=script._modules,
             _module_use=script._module_use,
-            _environment_variables=script._environment_variables,
             _array_indices=script._array_indices,
 
             # max_cleanup_time=None,
@@ -349,6 +349,7 @@ class UitPlusJob(PbsScript, TethysJob):
             _remote_workspace_id=job._remote_workspace_id,
             _remote_workspace=job._remote_workspace,
         )
+        instance.environment_variables = script._environment_variables
 
         return instance
 
@@ -378,6 +379,14 @@ class UitPlusJob(PbsScript, TethysJob):
                     sub_job._status = sub_job.qstat.get('status')
             self._pbs_job = j
         return self._pbs_job
+
+    @property
+    def environment_variables(self):
+        return OrderedDict(self._environment_variables)
+
+    @environment_variables.setter
+    def environment_variables(self, ordered_dict):
+        self._environment_variables = [[k, v] for k, v in ordered_dict.items()]
 
     @property
     def optional_directives(self):
@@ -471,7 +480,6 @@ class UitPlusJob(PbsScript, TethysJob):
         if not self._remote_workspace_id:
             self._remote_workspace_id = self.pbs_job.remote_workspace_id
         return self._remote_workspace_id
-
 
     @property
     def remote_workspace_suffix(self):
@@ -569,76 +577,7 @@ class UitPlusJob(PbsScript, TethysJob):
     def _resubmit(self, *args, **kwargs):
         self.pbs_job._job_id = None
         self.qstat = None
-        self.execute()
-
-    def _archive(self, *args, **kwargs):
-        # Check archive status and store system name
-        try:
-            archive_stat = self.client.call("archive stat")
-            archive_name = archive_stat.split()[2]
-        except UITError as e:
-            log.exception(e)
-            self.status_message = e.message
-            return
-
-        archive_filename = f"job_{self.remote_workspace_id}.run_files.tar.gz"
-        pbs_script = PbsScript(
-                name=self.name,
-                project_id=self.pbs_job.script.project_id,
-                num_nodes=1,
-                processes_per_node=1,
-                max_time="01:00:00",
-                queue="transfer",
-                node_type="transfer"
-        )
-        pbs_script.execution_block = (
-            f"tar -czf {archive_filename} *\n"
-            f"archive put -p -C {self.archive_dir} {archive_filename}\n"
-            f"rm {archive_filename}\n"
-        )
-
-        # Create PBS job
-        job = PbsJob(pbs_script, client=self.client, label="archive_"+self.label)
-        job._remote_workspace = self._remote_workspace
-        job._remote_workspace_id = self._remote_workspace_id
-        job.clean_on_delete = False
-
-        job.description = "Archive job: " + self.description
-        job_model = type(self).instance_from_pbs_job(job, self.user)
-        # Put job id in extended properties
-        save_attrs = ['name', 'project_id', 'num_nodes',
-                      'processes_per_node', 'queue',
-                      'system', 'label', '_array_indices']
-
-        job_model.extended_properties.update({
-            "archived_job_id": self.job_id,
-            "archived_to": archive_name,
-            "archived_job_script": {
-                attr: getattr(self, attr) for attr in save_attrs
-            }
-        })
-        # Add max_time
-        max_time_json = {'days': self.max_time.days,
-                         'seconds': self.max_time.seconds}
-        job_model.extended_properties['archived_job_script']['max_time'] = max_time_json
-        job_model.clean_on_delete = False
-        job_model.workspace = self.workspace
-
-        # Submit job
-        job_model.execute()
-
-    def remove_archive(self, *args, **kwargs):
-        archive_filename = f"job_{self._remote_workspace_id}.run_files.tar.gz"
-        self.client.call(f"archive rm {Path(self.archive_dir) / archive_filename}")
-        # Mark job as unarchived if exists
-        job_id = self.extended_properties.get("archived_job_id")
-        if job_id:
-            try:
-                archived_job = type(self).objects.get(job_id=job_id)
-            except type(self).DoesNotExist:
-                pass
-            archived_job.archived = False
-            archived_job.save()
+        self.execute(*args, **kwargs)
 
     def _update_status(self):
         """Retrieve a job’s status using the UIT Plus Python client.
@@ -646,11 +585,6 @@ class UitPlusJob(PbsScript, TethysJob):
         Translates UitJob status to TethysJob status and saves to the database
         """
         if self._status in TethysJob.TERMINAL_STATUSES:
-            # Check to determine archive status
-            archive_stat = self.is_job_archived()
-            if archive_stat != self.archived:
-                self.archived = archive_stat
-                self.save()
             return
 
         try:
@@ -671,6 +605,7 @@ class UitPlusJob(PbsScript, TethysJob):
                     self.job_id = self.extended_properties['cleanup_job_id']
             # else:
             #     raise RuntimeError("Could not find cleanup script ID.")
+            self.set_archived_status(True)
 
         self._status = new_status
         self.qstat = self.pbs_job.qstat
@@ -684,6 +619,16 @@ class UitPlusJob(PbsScript, TethysJob):
                 thread.daemon = True
                 thread.start()
         self.save()
+
+    def set_archived_status(self, value):
+        archived_job_id = self.extended_properties.get('archived_job_id')
+        if archived_job_id:
+            try:
+                archived_job = self.__class__.objects.get(job_id=archived_job_id)
+                archived_job.archived = value
+                archived_job.save()
+            except self.DoesNotExist:
+                pass
 
     @property
     def intermediate_transfer_interval_exceeded(self):
@@ -776,24 +721,28 @@ class UitPlusJob(PbsScript, TethysJob):
             bool: True. Always.
         """  # noqa: E501
         # Remove local workspace
-        log.warning(f'Removing {self.workspace}')
-        thread = threading.Thread(target=shutil.rmtree, args=(self.workspace, True))
-        thread.daemon = True
-        thread.start()
+        if self.workspace:
+            log.warning(f'Removing {self.workspace}')
+            thread = threading.Thread(target=shutil.rmtree, args=(self.workspace, True))
+            thread.daemon = True
+            thread.start()
 
         # Remove remote locations
         rm_cmd = "rm -rf {} || true"
         commands = []
-        for path in (self.working_dir, self.home_dir):
-            commands.append(rm_cmd.format(path))
         if archive:
             commands.append("archive rm -rf {} || true".format(self.archive_dir))
+            self.set_archived_status(False)
+        else:
+            for path in (self.working_dir, self.home_dir):
+                commands.append(rm_cmd.format(path))
 
         for cmd in commands:
             thread = threading.Thread(target=self.client.call, kwargs={'command': cmd, 'working_dir': '/'})
             thread.daemon = True
             thread.start()
             log.info(f"Executing command '{cmd}' on {self.system}")
+
         return True
 
     @property
@@ -811,6 +760,68 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         self._archive()
 
+    def _archive(self, *args, **kwargs):
+        # Check archive status and store system name
+        try:
+            archive_stat = self.client.call("archive stat")
+            archive_name = archive_stat.split()[2]
+        except UITError as e:
+            log.exception(e)
+            self.status_message = e.message
+            return
+
+        archive_filename = f"job_{self.remote_workspace_id}.run_files.tar.gz"
+        pbs_script = PbsScript(
+                name='archive',
+                project_id=self.pbs_job.script.project_id,
+                num_nodes=1,
+                processes_per_node=1,
+                max_time="01:00:00",
+                queue="transfer",
+                node_type="transfer"
+        )
+        pbs_script.execution_block = (
+            f"tar -czf {archive_filename} *\n"
+            f"archive put -p -C {self.archive_dir} {archive_filename}\n"
+            f"rm {archive_filename}\n"
+        )
+
+        # Create PBS job
+        job = PbsJob(pbs_script, client=self.client, label="archive_"+self.label)
+        job._remote_workspace = self._remote_workspace
+        job._remote_workspace_id = self._remote_workspace_id
+
+        job.description = f'Archive job: {self.name} ({self.job_id})'
+        job_model = self.instance_from_pbs_job(job, self.user)
+        # Put job id in extended properties
+        save_script_attrs = [
+            'name', 'project_id', 'num_nodes',
+            'processes_per_node', 'queue',
+            'system', '_array_indices'
+        ]
+
+        self.metadata = self.extended_properties
+        save_job_attrs = ['label', 'workspace', 'description', 'metadata']
+
+        job_model.extended_properties.update({
+            "archived_job_id": self.job_id,
+            "archived_to": archive_name,
+            "archived_job_script": {
+                attr: getattr(self, attr) for attr in save_script_attrs
+            },
+            "archived_job_attrs": {
+                attr: getattr(self, attr) for attr in save_job_attrs
+            }
+        })
+        # Add max_time
+        max_time_json = {'days': self.max_time.days,
+                         'seconds': self.max_time.seconds}
+        job_model.extended_properties['archived_job_script']['max_time'] = max_time_json
+        job_model.workspace = ''
+
+        # Submit job
+        job_model.execute()
+
     def restore(self):
         """Restore the job work directory from to archive server.
         NOTE: This is meant to be called only on an "archive" job.
@@ -820,9 +831,6 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             bool: True. Always.
         """
-        # Get Job ID
-        job_id = self.extended_properties["archived_job_id"]
-
         archive_filename = f"job_{self.remote_workspace_id}.run_files.tar.gz"
 
         # Create transfer script
@@ -831,35 +839,32 @@ class UitPlusJob(PbsScript, TethysJob):
             f"tar -xzf {archive_filename}\n"
             f"rm {archive_filename}\n"
         )
+        self.name = 'unarchive'
 
         # Submit job
         self.resubmit()
-        self.save()
 
         # Check database for archived job
         job_id = self.extended_properties.get("archived_job_id")
         if job_id is not None:
             try:
-                type(self).objects.get(job_id=job_id)
-            except type(self).DoesNotExist:
+                self.__class__.objects.get(job_id=job_id)
+            except self.DoesNotExist:
                 # Recreate job
-                job_props = self.extended_properties["archived_job_script"]
-                array_indices = job_props.pop("_array_indices")
-                label = job_props.pop("label")
-                job_props["max_time"] = dt.timedelta(**job_props["max_time"])
+                script_kwargs = self.extended_properties["archived_job_script"]
+                array_indices = script_kwargs.pop("_array_indices")
+                script_kwargs["max_time"] = dt.timedelta(**script_kwargs["max_time"])
                 # Setup PbsScript
-                restored_job_script = PbsScript(**job_props, array_indices=array_indices)
+                restored_job_script = PbsScript(**script_kwargs, array_indices=array_indices)
 
                 Job = PbsJob if array_indices is None else PbsArrayJob
-                pbs_job = Job(restored_job_script, client=self.client, label=label)
+                job_kwargs = self.extended_properties["archived_job_attrs"]
+                pbs_job = Job(restored_job_script, client=self.client, **job_kwargs)
                 pbs_job._remote_workspace = self._remote_workspace
                 pbs_job._remote_workspace_id = self._remote_workspace_id
-                pbs_job.description = self.description[13:]
                 pbs_job._job_id = job_id
-                restored = type(self).instance_from_pbs_job(pbs_job, self.user)
-                restored.status = "Restored"
+                restored = self.instance_from_pbs_job(pbs_job, self.user)
                 restored.status = "Complete"
-                restored.workspace = self.workspace
                 restored.save()
 
 
@@ -874,11 +879,12 @@ def uit_job_pre_delete(sender, instance, using, **kwargs):
         **kwargs:
     """
     try:
+        archive = bool(instance.extended_properties.get('archived_job_id'))
         instance.stop()
         try:
             if instance.clean_on_delete:
-                instance.clean()
+                instance.clean(archive=archive)
         except AttributeError:
-            instance.clean()
+            instance.clean(archive=archive)
     except Exception as e:
         log.exception(str(e))
