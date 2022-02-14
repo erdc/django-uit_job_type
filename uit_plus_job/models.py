@@ -243,7 +243,7 @@ class UitPlusJob(PbsScript, TethysJob):
     project_id = models.CharField(max_length=1024, null=False)
     num_nodes = models.IntegerField(default=1, null=False)
     processes_per_node = models.IntegerField(default=1, null=False)
-    max_time = models.DurationField(null=False)
+    _max_time = models.DurationField(null=False)
     queue = models.CharField(max_length=100, default='debug', null=False)
     node_type = models.CharField(max_length=10, choices=NODE_TYPE_CHOICES, default='compute', null=False)
     system = models.CharField(max_length=10, choices=SYSTEM_CHOICES, default='onyx', null=False)
@@ -288,6 +288,7 @@ class UitPlusJob(PbsScript, TethysJob):
         if len(args) + 1 == len(upj_fields):
             # Get list of field names in the order Django passes them in
             all_field_names = [field.name for field in upj_fields if field.name != 'tethysjob_ptr']
+            all_field_names[all_field_names.index('_max_time')] = 'max_time'
             # Match up given arg values with field names
             for field_name, value in zip(all_field_names, args):
                 if field_name in pbs_signature.parameters:
