@@ -154,7 +154,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     @param.depends('uit_client', watch=True)
     def update_uit_dependant_options(self):
         self.param.version.objects = ['System Default'] + self.get_versions(self.uit_client)
-        self.version = 'System Default'
+        self.version = self.version or 'System Default'
 
     @param.depends('version', watch=True)
     def update_version_profiles(self):
@@ -550,7 +550,8 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
         # Load default profile
         default = self.get_default_profile(self.selected_version, use_general_default=True)
-        if default is not None:
+        # ensure that profile isn't reloaded if it was previously set (which would override any changes made).
+        if default is not None and default.name != self.environment_profile:
             self._populate_profile_from_saved(default.name)
 
         self.profile_panel = super().advanced_options_view()
