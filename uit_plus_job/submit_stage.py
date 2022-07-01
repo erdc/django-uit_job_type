@@ -36,7 +36,6 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     pbs_body = param.String()
 
     # Parameters to override in subclass
-    get_versions = param.Action(lambda uit_client: [], precedence=-1)
     version_environment_variable = 'VERSION'
 
     def __init__(self, *args, **kwargs):
@@ -58,6 +57,17 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         )
         self.revert_btn.on_click(self.revert)
         self.profile_panel = pn.Column()
+
+    def get_versions(self, uit_client):
+        """Override this method to provide a list of versions for software.
+
+        Args:
+            uit_client: Client object to connect to HPC
+
+        Returns: A list of software versions
+
+        """
+        return []
 
     @param.depends('notification_email', 'environment_variables', 'modules_to_load', 'modules_to_unload', watch=True)
     def update_revert(self):
@@ -164,7 +174,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
         self.param.environment_profile_version.objects = profiles
         with param.discard_events(self):
-            self.environment_profile_version = version_default
+            self.environment_profile_version = version_default.name if version_default is not None else None
         if profiles:
             self.param.environment_profile_version.precedence = 2
             if 'hidden' not in self.no_version_profiles_alert.css_classes:
