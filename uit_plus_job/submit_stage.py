@@ -174,7 +174,8 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
         self.param.environment_profile_version.objects = profiles
         with param.discard_events(self):
-            self.environment_profile_version = version_default.name if version_default is not None else None
+            if version_default:
+                self.environment_profile_version = version_default.name
         if profiles:
             self.param.environment_profile_version.precedence = 2
             if 'hidden' not in self.no_version_profiles_alert.css_classes:

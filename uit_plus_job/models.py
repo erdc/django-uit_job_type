@@ -86,14 +86,16 @@ class EnvironmentProfile(models.Model):
         """
         # Get current default
         old_default = cls._get_general_default(usr, profile.hpc_system, profile.software)
+        if old_default:
+            # Remove the old default as general default
+            old_default.user_default = False
+            # Save
+            old_default.save()
+
         # Set profile as default
         profile.user_default = True
         # Save
         profile.save()
-        # Remove the old default as general default
-        old_default.user_default = False
-        # Save
-        old_default.save()
 
     @classmethod
     def get_default(cls, usr, hpc_system, software, version=None, use_general_default=True):
