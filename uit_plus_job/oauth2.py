@@ -6,6 +6,8 @@
 * Copyright: (c) Aquaveo 2018
 ********************************************************************************
 """
+from datetime import datetime
+
 from social_core.backends.oauth import BaseOAuth2
 from uit.uit import DEFAULT_CA_FILE
 
@@ -33,10 +35,16 @@ class UitPlusOAuth2(BaseOAuth2):
         ('USERNAME', 'email'),
         ('USERNAME', 'id'),
         ('SYSTEMS', 'systems'),
-        ('access_token_expires_on', 'expires_in'),
+        ('access_token_expires_on', 'expires'),
         ('refresh_token', 'refresh_token'),
-        ('refresh_token_expires_on', 'refresh_expires_in')
+        ('refresh_token_expires_on', 'refresh_expires_on')
     ]
+
+    def extra_data(self, user, uid, response, details=None, *args, **kwargs):
+        # convert date string to timestamp
+        expires_time = datetime.fromisoformat(response['access_token_expires_on'].replace('Z', ''))
+        response['access_token_expires_on'] = datetime.timestamp(expires_time)
+        return super().extra_data(user, uid, response, details, *args, **kwargs)
 
     def get_user_details(self, response):
         """
