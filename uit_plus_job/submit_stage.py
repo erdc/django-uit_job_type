@@ -42,11 +42,11 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         super().__init__(*args, **kwargs)
         self.overwrite_request = None
         self.cb = None
-        self.progress_bar = pn.widgets.misc.Progress(width=250, active=False, css_classes=["hidden"])
-        self.alert = pn.pane.Alert(css_classes=['hidden'])
+        self.progress_bar = pn.widgets.misc.Progress(width=250, active=False, visible=False)
+        self.alert = pn.pane.Alert(visible=False)
         self.no_version_profiles_alert = pn.pane.Alert(
             'No profiles have been created for the selected version',
-            alert_type='warning', css_classes=['hidden'], margin=(0, 5, 20, 5))
+            alert_type='warning', visible=False, margin=(0, 5, 20, 5))
         self.profile_management_card = pn.Card(
             self.profile_management_panel, title='Manage Profiles',
             collapsed=False,
@@ -178,12 +178,10 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 self.environment_profile_version = version_default.name
         if profiles:
             self.param.environment_profile_version.precedence = 2
-            if 'hidden' not in self.no_version_profiles_alert.css_classes:
-                self.no_version_profiles_alert.css_classes.append('hidden')
+            self.no_version_profiles_alert.visible = True
         else:
             self.param.environment_profile_version.precedence = -1
-            if 'hidden' in self.no_version_profiles_alert.css_classes:
-                self.no_version_profiles_alert.css_classes.remove('hidden')
+            self.no_version_profiles_alert.visible = False
 
     def update_save_panel(self, e):
         self.save_name = self.environment_profile if self.load_type == self.param.load_type.objects[1] else ''
@@ -341,8 +339,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
     def _alert(self, message, alert_type="info", timeout=True):
         self._clear_alert()
-        if 'hidden' in self.alert.css_classes:
-            self.alert.css_classes.remove('hidden')
+        self.alert.visible = True
         self.alert.alert_type = alert_type
         self.alert.object = message
         if timeout:
@@ -352,8 +349,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             self.cb = pn.state.add_periodic_callback(self._clear_alert, period=10000, count=1)
 
     def _clear_alert(self, e=None):
-        if 'hidden' not in self.alert.css_classes:
-            self.alert.css_classes.append('hidden')
+        self.alert.visible = False
         self.alert.object = ''
         # Stop clear timer
         if self.cb is not None and self.cb.running:
