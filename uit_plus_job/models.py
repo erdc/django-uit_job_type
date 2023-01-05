@@ -718,14 +718,18 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         try:
             archive = bool(self.extended_properties.get('archived_job_id'))
-            self.stop()
+            stop_result = self.stop()
+            if stop_result is False:
+                raise Exception('Delete failed while performing job cleanup.')
+
             try:
                 if self.clean_on_delete:
                     self.clean(archive=archive)
             except AttributeError:
                 self.clean(archive=archive)
         except Exception as e:
-            log.exception(str(e))
+            log.exception(f"Error during job delete: {e}")
+            raise  # Let Django know to display the error message to the user
         super().delete(using, keep_parents)
 
     def clean(self, archive=False):
