@@ -713,6 +713,21 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         return self.pbs_job.release()
 
+    def delete(self, using=None, keep_parents=False):
+        """Stops the job and cleans up workspaces in order to delete the job.
+        """
+        try:
+            archive = bool(self.extended_properties.get('archived_job_id'))
+            self.stop()
+            try:
+                if self.clean_on_delete:
+                    self.clean(archive=archive)
+            except AttributeError:
+                self.clean(archive=archive)
+        except Exception as e:
+            log.exception(str(e))
+        super().delete(using, keep_parents)
+
     def clean(self, archive=False):
         """Remove all files and directories associated with the job.
 
@@ -870,25 +885,3 @@ class UitPlusJob(PbsScript, TethysJob):
                 restored = self.instance_from_pbs_job(pbs_job, self.user)
                 restored.status = "Complete"
                 restored.save()
-
-
-@receiver(pre_delete, sender=UitPlusJob)
-def uit_job_pre_delete(sender, instance, using, **kwargs):
-    """Pre-delete hook to make sure we clean up our workspace.
-
-    Args:
-        sender: The model's class
-        instance: The instance being deleted
-        using: The DB alias in use
-        **kwargs:
-    """
-    try:
-        archive = bool(instance.extended_properties.get('archived_job_id'))
-        instance.stop()
-        try:
-            if instance.clean_on_delete:
-                instance.clean(archive=archive)
-        except AttributeError:
-            instance.clean(archive=archive)
-    except Exception as e:
-        log.exception(str(e))
