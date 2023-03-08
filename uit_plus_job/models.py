@@ -782,7 +782,8 @@ class UitPlusJob(PbsScript, TethysJob):
                 processes_per_node=1,
                 max_time="01:00:00",
                 queue="transfer",
-                node_type="transfer"
+                node_type="transfer",
+                system=self.system
         )
         pbs_script.execution_block = (
             f"tar -czf {archive_filename} *\n"
