@@ -1,5 +1,6 @@
 # Put your persistent store models in this file
 import os
+import posixpath
 import re
 import shutil
 import threading
@@ -417,7 +418,7 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         if self._archive_dir is None:
             archive_home = self.get_environment_variable('ARCHIVE_HOME')
-            self._archive_dir = os.path.join(archive_home, self.remote_workspace_suffix)
+            self._archive_dir = posixpath.join(archive_home, self.remote_workspace_suffix)
         return self._archive_dir
 
     @property
@@ -449,7 +450,7 @@ class UitPlusJob(PbsScript, TethysJob):
             str: The job home directory
         """
         if self._home_dir is None:
-            self._home_dir = os.path.join(self.client.HOME, self.remote_workspace_suffix)
+            self._home_dir = posixpath.join(self.client.HOME, self.remote_workspace_suffix)
         return self._home_dir
 
     @property
@@ -713,6 +714,25 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         return self.pbs_job.release()
 
+    def delete(self, using=None, keep_parents=False):
+        """Stops the job and cleans up workspaces in order to delete the job.
+        """
+        try:
+            archive = bool(self.extended_properties.get('archived_job_id'))
+            stop_result = self.stop()
+            if stop_result is False:
+                raise Exception('Delete failed while performing job cleanup.')
+
+            try:
+                if self.clean_on_delete:
+                    self.clean(archive=archive)
+            except AttributeError:
+                self.clean(archive=archive)
+        except Exception as e:
+            log.exception(f"Error during job delete: {e}")
+            raise  # Let Django know to display the error message to the user
+        super().delete(using, keep_parents)
+
     def clean(self, archive=False):
         """Remove all files and directories associated with the job.
 
@@ -726,7 +746,7 @@ class UitPlusJob(PbsScript, TethysJob):
         """  # noqa: E501
         # Remove local workspace
         if self.workspace:
-            log.warning(f'Removing {self.workspace}')
+            log.warning(f'Removing local workspace {self.workspace}')
             thread = threading.Thread(target=shutil.rmtree, args=(self.workspace, True))
             thread.daemon = True
             thread.start()
@@ -870,25 +890,3 @@ class UitPlusJob(PbsScript, TethysJob):
                 restored = self.instance_from_pbs_job(pbs_job, self.user)
                 restored.status = "Complete"
                 restored.save()
-
-
-@receiver(pre_delete, sender=UitPlusJob)
-def uit_job_pre_delete(sender, instance, using, **kwargs):
-    """Pre-delete hook to make sure we clean up our workspace.
-
-    Args:
-        sender: The model's class
-        instance: The instance being deleted
-        using: The DB alias in use
-        **kwargs:
-    """
-    try:
-        archive = bool(instance.extended_properties.get('archived_job_id'))
-        instance.stop()
-        try:
-            if instance.clean_on_delete:
-                instance.clean(archive=archive)
-        except AttributeError:
-            instance.clean(archive=archive)
-    except Exception as e:
-        log.exception(str(e))
