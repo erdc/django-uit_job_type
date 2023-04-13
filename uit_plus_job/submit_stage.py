@@ -178,10 +178,10 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 self.environment_profile_version = version_default.name
         if profiles:
             self.param.environment_profile_version.precedence = 2
-            self.no_version_profiles_alert.visible = True
+            self.no_version_profiles_alert.visible = False
         else:
             self.param.environment_profile_version.precedence = -1
-            self.no_version_profiles_alert.visible = False
+            self.no_version_profiles_alert.visible = True
 
     def update_save_panel(self, e):
         self.save_name = self.environment_profile if self.load_type == self.param.load_type.objects[1] else ''
