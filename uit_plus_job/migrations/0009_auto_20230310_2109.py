@@ -18,6 +18,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='uitplusjob',
             name='system',
-            field=models.CharField(choices=[('jim', 'jim'), ('narwhal', 'narwhal'), ('onyx', 'onyx')], default='onyx', max_length=10),
+            field=models.CharField(choices=[('jim', 'jim'), ('mustang', 'mustang'), ('narwhal', 'narwhal'), ('onyx', 'onyx')], default='onyx', max_length=10),
         ),
     ]

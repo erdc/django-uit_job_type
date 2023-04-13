@@ -41,7 +41,7 @@ class Migration(migrations.Migration):
                 ('_max_time', models.DurationField()),
                 ('queue', models.CharField(default='debug', max_length=100)),
                 ('node_type', models.CharField(choices=[('bigmem', 'bigmem'), ('compute', 'compute'), ('gpu', 'gpu'), ('knl', 'knl'), ('transfer', 'transfer')], default='compute', max_length=10)),
-                ('system', models.CharField(choices=[('jim', 'jim'), ('narwhal', 'narwhal'), ('onyx', 'onyx')], default='onyx', max_length=10)),
+                ('system', models.CharField(choices=[('jim', 'jim'), ('mustang', 'mustang'), ('narwhal', 'narwhal'), ('onyx', 'onyx')], default='onyx', max_length=10)),
                 ('execution_block', models.TextField()),
                 ('_modules', models.JSONField(default=dict, null=True)),
                 ('_module_use', models.JSONField(default=dict, null=True)),
