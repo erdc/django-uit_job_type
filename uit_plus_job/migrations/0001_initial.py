@@ -14,7 +14,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('tethys_compute', '0001_initial_30'),
+        ('tethys_compute', '0001_initial_40'),
     ]
 
     operations = [

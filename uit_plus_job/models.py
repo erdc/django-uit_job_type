@@ -14,7 +14,6 @@ from django.db import models
 from django.db.models.signals import pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
-from django.contrib.postgres.fields import ArrayField
 from django.db.models import JSONField
 from django.contrib.auth.models import User
 from tethys_apps.base.function_extractor import TethysFunctionExtractor
@@ -46,10 +45,10 @@ class EnvironmentProfile(models.Model):
     software = models.CharField(max_length=1024, null=True)
     email = models.CharField(max_length=1024, null=True)
     environment_variables = models.CharField(max_length=2048, null=True)
-    modules = JSONField(null=True)
+    modules = JSONField(default=dict, null=True)
     last_used = models.DateTimeField(auto_now_add=True)
     user_default = models.BooleanField(default=False)
-    default_for_versions = ArrayField(models.CharField(max_length=16), default=list, null=True)
+    default_for_versions = JSONField(blank=True, default=list, null=True)
 
     @classmethod
     def set_default_for_version(cls, usr, profile, version):
@@ -134,14 +133,12 @@ class EnvironmentProfile(models.Model):
         Returns:
 
         """
-        try:
-            profile = cls.objects.get(user=usr, hpc_system=hpc_system, software=software,
-                                      default_for_versions__contains=[version])
-
-        except cls.DoesNotExist:
-            return None
-
-        return profile
+        profiles = cls.objects.filter(
+            user=usr, hpc_system=hpc_system, software=software
+        ).exclude(default_for_versions=[])
+        for profile in profiles:
+            if version in profile.default_for_versions:
+                return profile
 
     @classmethod
     def _get_general_default(cls, usr, hpc_system, software):
@@ -229,18 +226,18 @@ class UitPlusJob(PbsScript, TethysJob):
         'X': 'RUN',  # Subjob has completed execution or has been deleted.
     }
 
-    SYSTEM_CHOICES = [(s, s) for s in NODE_TYPES.keys()]
+    SYSTEM_CHOICES = [(s, s) for s in sorted(NODE_TYPES.keys())]
 
     NODE_TYPE_CHOICES = [(nt, nt) for nt in sorted({nt for s in NODE_TYPES.values() for nt in s.keys()})]
 
     # job vars
     job_id = models.CharField(max_length=1024, null=True)
-    archive_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
-    home_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
-    transfer_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    archive_input_files = JSONField(blank=True, default=list, null=True)
+    home_input_files = JSONField(blank=True, default=list, null=True)
+    transfer_input_files = JSONField(blank=True, default=list, null=True)
     _remote_workspace = models.TextField(blank=True)
     _remote_workspace_id = models.CharField(max_length=100)
-    qstat = JSONField(null=True)
+    qstat = JSONField(default=dict, null=True)
     archived = models.BooleanField(default=False)
 
     # pbs_script vars
@@ -252,22 +249,22 @@ class UitPlusJob(PbsScript, TethysJob):
     node_type = models.CharField(max_length=10, choices=NODE_TYPE_CHOICES, default='compute', null=False)
     system = models.CharField(max_length=10, choices=SYSTEM_CHOICES, default='onyx', null=False)
     execution_block = models.TextField(null=False)
-    _modules = JSONField(null=True)
-    _module_use = JSONField(null=True)
-    _optional_directives = ArrayField(models.CharField(max_length=2048, null=True))
-    _environment_variables = JSONField(null=True)
-    _array_indices = ArrayField(models.IntegerField(), null=True)
+    _modules = JSONField(default=dict, null=True)
+    _module_use = JSONField(default=dict, null=True)
+    _optional_directives = JSONField(blank=True, default=list, null=True)
+    _environment_variables = JSONField(default=dict, null=True)
+    _array_indices = JSONField(blank=True, default=list, null=True)
 
     # other
-    archive_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
-    home_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    archive_output_files = JSONField(blank=True, default=list, null=True)
+    home_output_files = JSONField(blank=True, default=list, null=True)
     intermediate_transfer_interval = models.IntegerField(default=0, null=False)
     last_intermediate_transfer = models.DateTimeField(null=False, default=timezone.now)
     max_cleanup_time = models.DurationField(null=False, default=dt.timedelta(hours=1))
-    transfer_intermediate_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    transfer_intermediate_files = JSONField(blank=True, default=list, null=True)
     transfer_job_script = models.BooleanField(default=True)
-    transfer_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
-    custom_logs = JSONField(default=dict)
+    transfer_output_files = JSONField(blank=True, default=list, null=True)
+    custom_logs = JSONField(default=dict, null=False)
     _process_intermediate_results_function = models.CharField(max_length=1024, null=True)
     _update_status_interval = dt.timedelta(seconds=30)  # This is not effective until jobs table uses WS
 
@@ -355,6 +352,10 @@ class UitPlusJob(PbsScript, TethysJob):
             _remote_workspace=job._remote_workspace,
         )
         instance.environment_variables = script._environment_variables
+        instance._pbs_job = job
+        # Note that this preserves information that is not serialized in the database (like post_processing_script)
+        # Non-serialized attributes will be accessible while the object is in memory, but not from an object that is
+        # reconstructed from the database.
 
         return instance
 
@@ -404,6 +405,8 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @staticmethod
     def parse_pbs_directive(directive_str):
+        if isinstance(directive_str, (tuple, list)):
+            return PbsDirective(*directive_str)
         if isinstance(directive_str, PbsDirective):
             return directive_str
         m = re.match("PbsDirective\(directive='(.*?)', options='(.*?)'\)", directive_str)
@@ -560,7 +563,7 @@ class UitPlusJob(PbsScript, TethysJob):
         """Execute the job using the UIT Plus Python client."""
         try:
             # Submit job with PbsScript object and remote workspace
-            self.job_id = self.pbs_job.submit(self, remote_name=remote_name)
+            self.job_id = self.pbs_job.submit(remote_name=remote_name)
         except UITError as e:
             if 'allocation' in str(e):
                 self.status_message = 'Submission failed because subproject allocation has expired or there are ' \
@@ -607,7 +610,7 @@ class UitPlusJob(PbsScript, TethysJob):
             if 'cleanup_job_id' in self.extended_properties:
                 if self.job_id != self.extended_properties['cleanup_job_id']:
                     new_status = "SUB"
-                    self.job_id = self.extended_properties['cleanup_job_id']
+                    self.job_id = self.extended_properties['']
             # else:
             #     raise RuntimeError("Could not find cleanup script ID.")
             self.set_archived_status(True)
