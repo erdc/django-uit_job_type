@@ -14,6 +14,7 @@ from django.db import models
 from django.db.models.signals import pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
+from django.contrib.postgres.fields import ArrayField
 from django.db.models import JSONField
 from django.contrib.auth.models import User
 from tethys_apps.base.function_extractor import TethysFunctionExtractor
@@ -48,7 +49,7 @@ class EnvironmentProfile(models.Model):
     modules = JSONField(default=dict, null=True)
     last_used = models.DateTimeField(auto_now_add=True)
     user_default = models.BooleanField(default=False)
-    default_for_versions = JSONField(blank=True, default=list, null=True)
+    default_for_versions = ArrayField(models.CharField(max_length=16), default=list, null=True)
 
     @classmethod
     def set_default_for_version(cls, usr, profile, version):
@@ -232,9 +233,9 @@ class UitPlusJob(PbsScript, TethysJob):
 
     # job vars
     job_id = models.CharField(max_length=1024, null=True)
-    archive_input_files = JSONField(blank=True, default=list, null=True)
-    home_input_files = JSONField(blank=True, default=list, null=True)
-    transfer_input_files = JSONField(blank=True, default=list, null=True)
+    archive_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    home_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    transfer_input_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     _remote_workspace = models.TextField(blank=True)
     _remote_workspace_id = models.CharField(max_length=100)
     qstat = JSONField(default=dict, null=True)
@@ -251,19 +252,19 @@ class UitPlusJob(PbsScript, TethysJob):
     execution_block = models.TextField(null=False)
     _modules = JSONField(default=dict, null=True)
     _module_use = JSONField(default=dict, null=True)
-    _optional_directives = JSONField(blank=True, default=list, null=True)
+    _optional_directives = ArrayField(models.CharField(max_length=2048, null=True))
     _environment_variables = JSONField(default=dict, null=True)
-    _array_indices = JSONField(blank=True, default=list, null=True)
+    _array_indices = ArrayField(models.IntegerField(), null=True)
 
     # other
-    archive_output_files = JSONField(blank=True, default=list, null=True)
-    home_output_files = JSONField(blank=True, default=list, null=True)
+    archive_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
+    home_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     intermediate_transfer_interval = models.IntegerField(default=0, null=False)
     last_intermediate_transfer = models.DateTimeField(null=False, default=timezone.now)
     max_cleanup_time = models.DurationField(null=False, default=dt.timedelta(hours=1))
-    transfer_intermediate_files = JSONField(blank=True, default=list, null=True)
+    transfer_intermediate_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     transfer_job_script = models.BooleanField(default=True)
-    transfer_output_files = JSONField(blank=True, default=list, null=True)
+    transfer_output_files = ArrayField(models.CharField(max_length=2048, null=True), null=True)
     custom_logs = JSONField(default=dict, null=False)
     _process_intermediate_results_function = models.CharField(max_length=1024, null=True)
     _update_status_interval = dt.timedelta(seconds=30)  # This is not effective until jobs table uses WS
