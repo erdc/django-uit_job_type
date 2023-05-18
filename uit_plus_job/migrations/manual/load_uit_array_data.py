@@ -12,7 +12,7 @@ Instructions:
 
     3. Import the ArrayField data from the exported data file in step 1:
 
-        tethys manage shell < $(python -c "import uit_plus_job; print(uit_plus_job.__path__[0])")/migrations/load_uit_array_data.py
+        tethys manage shell < $(python -c "import uit_plus_job; print(uit_plus_job.__path__[0])")/migrations/manual/load_uit_array_data.py
 
 """
 
