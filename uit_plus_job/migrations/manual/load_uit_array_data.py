@@ -42,4 +42,6 @@ for job in UitPlusJob.objects.all():
     job._optional_directives = json.loads(row_data['_optional_directives'])
     if row_data['_array_indices']:
         job._array_indices = [int(i) for i in json.loads(row_data['_array_indices'])]
+    else:
+        job._array_indices = None
     job.save()
