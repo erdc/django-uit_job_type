@@ -215,7 +215,7 @@ class UitPlusJob(PbsScript, TethysJob):
         'B': 'RUN',  # Array job: at least one subjob has started
         'E': 'COM',  # Job is exiting after having run.
         'F': 'COM',  # Job is finished.
-        'H': 'SUB',  # Job is held.
+        'H': 'PAS',  # Job is held.
         'M': 'SUB',  # Job was moved to another server.
         'Q': 'SUB',  # Job is queued.
         'R': 'RUN',  # Job is running.
@@ -379,6 +379,7 @@ class UitPlusJob(PbsScript, TethysJob):
             j._job_id = self.job_id
             j._status = self._status
             j._qstat = self.qstat
+            j._post_processing_job_id = self.extended_properties.get('post_processing_job_id')
             if self._array_indices and self.qstat is not None:
                 for sub_job in j.sub_jobs:
                     sub_job._qstat = self.qstat.get(sub_job.job_id)
@@ -453,7 +454,7 @@ class UitPlusJob(PbsScript, TethysJob):
             str: The job home directory
         """
         if self._home_dir is None:
-            self._home_dir = posixpath.join(self.client.HOME, self.remote_workspace_suffix)
+            self._home_dir = self.client.HOME / self.remote_workspace_suffix
         return self._home_dir
 
     @property
@@ -539,7 +540,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 logs[name] = {}
                 logs[name]['stdout'] = sub_job.get_stdout_log
                 logs[name]['stderr'] = sub_job.get_stderr_log
-                logs[name].update({log_type: partial(sub_job.get_custom_log, path, num_lines=1000)
+                logs[name].update({log_type: partial(sub_job.get_cached_file_contents, path, bytes=100_000)
                                    for log_type, path in self.custom_logs.items()})
             return logs
 
@@ -564,6 +565,7 @@ class UitPlusJob(PbsScript, TethysJob):
         try:
             # Submit job with PbsScript object and remote workspace
             self.job_id = self.pbs_job.submit(remote_name=remote_name)
+            self.extended_properties['post_processing_job_id'] = self.pbs_job.post_processing_job_id
         except UITError as e:
             if 'allocation' in str(e):
                 self.status_message = 'Submission failed because subproject allocation has expired or there are ' \
@@ -592,7 +594,7 @@ class UitPlusJob(PbsScript, TethysJob):
 
         Translates UitJob status to TethysJob status and saves to the database
         """
-        if self._status in TethysJob.TERMINAL_STATUSES:
+        if self._status in TethysJob.TERMINAL_STATUS_CODES:
             return
 
         try:
@@ -648,23 +650,28 @@ class UitPlusJob(PbsScript, TethysJob):
 
     def _process_results(self):
         """Process the results using the UIT Plus Python client."""
-        remote_dir = os.path.join(self.home_dir, 'transfer')
-        remote_dir = self.working_dir
-        self.get_remote_files(remote_dir, self.transfer_output_files)
-        # self.get_remote_files(remote_dir, ["log.stdout", "log.stderr"])
-        # TODO get log files
+        self.get_remote_files(self.transfer_output_files)
 
     def get_intermediate_results(self):
         """Retrieve intermediate result files from the supercomputer."""
-        if self.get_remote_files(self.working_dir, self.transfer_intermediate_files):
+        if self.get_remote_files(self.transfer_intermediate_files):
             if self.process_intermediate_results_function:
                 self.process_intermediate_results_function()
 
-    def get_remote_files(self, remote_dir, remote_filenames):
+    def resolve_paths(self, paths):
+        resolved_paths = []
+        for p in paths:
+            if '$JOB_INDEX' in p or '$RUN_DIR' in p:
+                for sub_job in self.pbs_job.sub_jobs:
+                    resolved_paths.append(sub_job.resolve_path(p))
+            else:
+                resolved_paths.append(self.pbs_job.resolve_path(p))
+        return resolved_paths
+
+    def get_remote_files(self, remote_filenames):
         """Transfer files from a directory on the super computer.
 
         Args:
-            remote_dir (str): Remote directory from which to pull files
             remote_filenames (List[str]): Files to retrieve from remote_dir
 
         Returns:
@@ -672,12 +679,15 @@ class UitPlusJob(PbsScript, TethysJob):
         """
 
         # Ensure the local transfer directory exists
-        Path(self.workspace).mkdir(parents=True, exist_ok=True)
-
+        workspace = Path(self.workspace)
         success = True
-        for remote_file in remote_filenames:
-            local_path = os.path.join(self.workspace, remote_file)
-            remote_path = os.path.join(remote_dir, remote_file)
+        remote_paths = self.resolve_paths(remote_filenames)
+
+        for remote_path in remote_paths:
+            rel_path = remote_path.relative_to(self.working_dir)
+            local_path = workspace / rel_path
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+
             try:
                 self.client.get_file(remote_path=remote_path, local_path=local_path)
                 if not os.path.exists(local_path):

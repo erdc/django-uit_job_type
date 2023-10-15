@@ -644,8 +644,13 @@ class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
 
         return row
 
+    @property
+    def transfer_output_files(self):
+        return None
+
     def submit(self, custom_logs=None):
         self.job.script = self.pbs_script  # update script to ensure it reflects any UI updates
         job = UitPlusJob.instance_from_pbs_job(self.job, self.tethys_user)
         job.custom_logs = custom_logs or self.custom_logs
+        job.transfer_output_files = self.transfer_output_files
         job.execute()
