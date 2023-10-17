@@ -3,18 +3,11 @@
 import datetime
 from django.conf import settings
 from django.db import migrations, models
-import django.db.models.deletion
 import django.utils.timezone
 import uit.pbs_script
 
 
 class Migration(migrations.Migration):
-    replaces = [('uit_plus_job', '0001_initial'), ('uit_plus_job', '0002_custom_logs'),
-                ('uit_plus_job', '0003_environment_profiles'), ('uit_plus_job', '0004_auto_20210218_1356'),
-                ('uit_plus_job', '0005_environmentprofile_software'), ('uit_plus_job', '0006_uitplusjob_archived'),
-                ('uit_plus_job', '0007_auto_20220214_1923'), ('uit_plus_job', '0008_auto_20230414_1548'),
-                ('uit_plus_job', '0009_array_fields')]
-
     initial = True
 
     dependencies = [
