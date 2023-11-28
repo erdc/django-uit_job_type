@@ -813,7 +813,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 project_id=self.pbs_job.script.project_id,
                 num_nodes=1,
                 processes_per_node=1,
-                max_time="01:00:00",
+                max_time="48:00:00",
                 queue="transfer",
                 node_type="transfer",
                 system=self.system
