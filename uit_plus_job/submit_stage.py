@@ -38,10 +38,6 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
     # Parameters to override in subclass
     version_environment_variable = 'VERSION'
-
-    #override is_submitable(self) in pyuit --> uit --> gui_tools --> submit.py
-    # if you run super it will add additional stuff 
-    # put is_submittable in helios workflows --> submit_stage.py
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
