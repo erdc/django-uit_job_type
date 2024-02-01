@@ -25,6 +25,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     version = param.ObjectSelector(label='Set Version Default', precedence=1)
     show_save_panel = param.Boolean()
     show_delete_panel = param.Boolean()
+    show_no_helios_alert = param.Boolean()
     delete_profile_btn = param.Action(lambda self: self.update_delete_panel(True), label='Delete Selected Profile')
     software = param.String()
     notification_email = param.String(label='Notification E-mail')
@@ -290,6 +291,11 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
         # Check to see if we have already loaded this model to overwrite
         # and were just asking for confirmation
+        if not self.version_environment_variable in self.environment_variables:
+            self.overwrite_request = 1
+            self._alert(f'You must enter a {self.version_environment_variable} before you can save.', alert_type='danger')
+            self.param.trigger('show_no_helios_alert')
+            return
 
         if not self.save_name:
             self.overwrite_request = 1
@@ -345,8 +351,8 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         if timeout:
             # Clear the alert after 3 seconds
             if self.cb is not None and self.cb.running:
+                self.cb = pn.state.add_periodic_callback(self._clear_alert, period=10000, count=1)
                 self.cb.stop()
-            self.cb = pn.state.add_periodic_callback(self._clear_alert, period=10000, count=1)
 
     def _clear_alert(self, e=None):
         self.alert.visible = False
@@ -507,7 +513,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 pn.Row(delete_btn, align='end')
             )
 
-    @param.depends('show_save_panel')
+    @param.depends('show_save_panel', 'show_no_helios_alert')
     def save_panel(self):
         if self.show_save_panel:
             save_btn = pn.widgets.Button(name='Save', button_type='success', width=100)
