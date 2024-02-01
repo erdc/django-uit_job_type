@@ -39,6 +39,10 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     # Parameters to override in subclass
     version_environment_variable = 'VERSION'
 
+    #override is_submitable(self) in pyuit --> uit --> gui_tools --> submit.py
+    # if you run super it will add additional stuff 
+    # put is_submittable in helios workflows --> submit_stage.py
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.overwrite_request = None
@@ -291,11 +295,6 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
         # Check to see if we have already loaded this model to overwrite
         # and were just asking for confirmation
-        if not self.version_environment_variable in self.environment_variables:
-            self.overwrite_request = 1
-            self._alert(f'You must enter a {self.version_environment_variable} before you can save.', alert_type='danger')
-            self.param.trigger('show_no_helios_alert')
-            return
 
         if not self.save_name:
             self.overwrite_request = 1
@@ -351,8 +350,8 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         if timeout:
             # Clear the alert after 3 seconds
             if self.cb is not None and self.cb.running:
-                self.cb = pn.state.add_periodic_callback(self._clear_alert, period=10000, count=1)
                 self.cb.stop()
+            self.cb = pn.state.add_periodic_callback(self._clear_alert, period=10000, count=1)
 
     def _clear_alert(self, e=None):
         self.alert.visible = False
