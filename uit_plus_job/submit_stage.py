@@ -294,10 +294,10 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         }
 
         # Check to see if we have already loaded this model to overwrite
-        # and were just asking for confirmation
-        if not ('HELIOS_VERSION' or 'Helios_Version' or 'helios_version' or 'helios version' or 'HELIOS VERSION' or 'Helios Version') in self.environment_variables:
+        # and were just asking for confirmation]
+        if not self.version_environment_variable in self.environment_variables:
             self.overwrite_request = 1
-            self._alert('You must add a HELIOS_VERSION environment variable before you can save.', alert_type='danger')
+            self._alert(f'You must add a {self.version_environment_variable} environment variable before you can save.', alert_type='danger')
             self.param.trigger('show_no_helios_alert')
             return
         
