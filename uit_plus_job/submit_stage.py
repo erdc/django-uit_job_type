@@ -69,6 +69,12 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
         """
         return []
+    
+    @property
+    def versions(self):
+        if self._software_versions is None:
+            self._software_versions = self.get_versions()
+        return self._software_versions
 
     @param.depends('notification_email', 'environment_variables', 'modules_to_load', 'modules_to_unload', watch=True)
     def update_revert(self):
@@ -164,7 +170,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
     @param.depends('uit_client', watch=True)
     def update_uit_dependant_options(self):
-        self.param.version.objects = ['System Default'] + self.get_versions(self.uit_client)
+        self.param.version.objects = ['System Default'] + self.versions
         self.version = self.version or 'System Default'
 
     @param.depends('version', watch=True)
