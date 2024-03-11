@@ -25,6 +25,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     version = param.ObjectSelector(label='Set Version Default', precedence=1)
     show_save_panel = param.Boolean()
     show_delete_panel = param.Boolean()
+    show_no_helios_alert = param.Boolean()
     delete_profile_btn = param.Action(lambda self: self.update_delete_panel(True), label='Delete Selected Profile')
     software = param.String()
     notification_email = param.String(label='Notification E-mail')
@@ -37,7 +38,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
     # Parameters to override in subclass
     version_environment_variable = 'VERSION'
-
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.overwrite_request = None
@@ -381,12 +382,20 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                     modules_to_load.append(line[3])
 
             # Get environment variables
-            if len(line) > 1 and line[0] == "export":
-                # Add environment variable
-                var_name = line[1].split("=")[0]
-                # Refuse everything to the right of the first equals sign
-                value = '='.join(line[1].split("=")[1:])
-                env_vars[var_name] = value
+            if len(line) > 1:
+                # parse BASH scripts
+                if line[0] == "export":
+                    # Add environment variable
+                    var_name = line[1].split("=")[0]
+                    # Refuse everything to the right of the first equals sign
+                    value = '='.join(line[1].split("=")[1:])
+                    env_vars[var_name] = value
+
+                # parse CSH scripts
+                if line[0] == "setenv":
+                    # Add environment variable
+                    var_name = line[1]
+                    env_vars[var_name] = line[2]
 
         return {"modules_to_load": modules_to_load,
                 "modules_to_unload": modules_to_unload,
@@ -507,7 +516,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 pn.Row(delete_btn, align='end')
             )
 
-    @param.depends('show_save_panel')
+    @param.depends('show_save_panel', 'show_no_helios_alert')
     def save_panel(self):
         if self.show_save_panel:
             save_btn = pn.widgets.Button(name='Save', button_type='success', width=100)
