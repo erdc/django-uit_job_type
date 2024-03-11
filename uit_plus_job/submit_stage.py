@@ -382,12 +382,20 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                     modules_to_load.append(line[3])
 
             # Get environment variables
-            if len(line) > 1 and line[0] == "export":
-                # Add environment variable
-                var_name = line[1].split("=")[0]
-                # Refuse everything to the right of the first equals sign
-                value = '='.join(line[1].split("=")[1:])
-                env_vars[var_name] = value
+            if len(line) > 1:
+                # parse BASH scripts
+                if line[0] == "export":
+                    # Add environment variable
+                    var_name = line[1].split("=")[0]
+                    # Refuse everything to the right of the first equals sign
+                    value = '='.join(line[1].split("=")[1:])
+                    env_vars[var_name] = value
+
+                # parse CSH scripts
+                if line[0] == "setenv":
+                    # Add environment variable
+                    var_name = line[1]
+                    env_vars[var_name] = line[2]
 
         return {"modules_to_load": modules_to_load,
                 "modules_to_unload": modules_to_unload,
