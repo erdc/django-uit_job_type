@@ -295,9 +295,18 @@ class UitPlusJob(PbsScript, TethysJob):
                 if field_name in pbs_signature.parameters:
                     pbs_kwargs[field_name] = value
 
-        PbsScript.__init__(self, **pbs_kwargs)
-
         TethysJob.__init__(self, *args, **kwargs)
+
+        try:
+            PbsScript.__init__(self, **pbs_kwargs)
+            self._system_decommissioned = False
+        except ValueError as e:
+            if e.args[0].startswith(f'"{self.system}"'):
+                # system is no longer supported
+                self._system_decommissioned = True
+                self.status = 'Purged'
+            else:
+                raise e
 
         self._client = None
         self._token = None
@@ -361,6 +370,8 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def pbs_job(self):
+        if self._system_decommissioned:
+            raise RuntimeError('The PBS Job is not available on jobs from systems that have been decommissioned.')
         if self._pbs_job is None:
             Job = PbsJob if not self._array_indices else PbsArrayJob
             j = Job(
@@ -730,20 +741,21 @@ class UitPlusJob(PbsScript, TethysJob):
     def delete(self, using=None, keep_parents=False):
         """Stops the job and cleans up workspaces in order to delete the job.
         """
-        try:
-            archive = bool(self.extended_properties.get('archived_job_id'))
-            stop_result = self.stop()
-            if stop_result is False:
-                raise Exception('Delete failed while performing job cleanup.')
-
+        if not self._system_decommissioned:
             try:
-                if self.clean_on_delete:
+                archive = bool(self.extended_properties.get('archived_job_id'))
+                stop_result = self.stop()
+                if stop_result is False:
+                    raise Exception('Delete failed while performing job cleanup.')
+
+                try:
+                    if self.clean_on_delete:
+                        self.clean(archive=archive)
+                except AttributeError:
                     self.clean(archive=archive)
-            except AttributeError:
-                self.clean(archive=archive)
-        except Exception as e:
-            log.exception(f"Error during job delete: {e}")
-            raise  # Let Django know to display the error message to the user
+            except Exception as e:
+                log.exception(f"Error during job delete: {e}")
+                raise  # Let Django know to display the error message to the user
         super().delete(using, keep_parents)
 
     def clean(self, archive=False):
