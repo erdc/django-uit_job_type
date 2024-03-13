@@ -741,24 +741,25 @@ class UitPlusJob(PbsScript, TethysJob):
     def delete(self, using=None, keep_parents=False):
         """Stops the job and cleans up workspaces in order to delete the job.
         """
-        if not self._system_decommissioned:
-            try:
-                archive = bool(self.extended_properties.get('archived_job_id'))
+        try:
+            archive = bool(self.extended_properties.get('archived_job_id'))
+            if not self._system_decommissioned:
                 stop_result = self.stop()
                 if stop_result is False:
                     raise Exception('Delete failed while performing job cleanup.')
 
-                try:
-                    if self.clean_on_delete:
-                        self.clean(archive=archive)
-                except AttributeError:
-                    self.clean(archive=archive)
-            except Exception as e:
-                log.exception(f"Error during job delete: {e}")
-                raise  # Let Django know to display the error message to the user
+            clean_remote = not self._system_decommissioned
+            try:
+                if self.clean_on_delete:
+                    self.clean(archive=archive, remote=clean_remote)
+            except AttributeError:
+                self.clean(archive=archive, remote=clean_remote)
+        except Exception as e:
+            log.exception(f"Error during job delete: {e}")
+            raise  # Let Django know to display the error message to the user
         super().delete(using, keep_parents)
 
-    def clean(self, archive=False):
+    def clean(self, archive=False, remote=True):
         """Remove all files and directories associated with the job.
 
         Removal takes place on unmonitored background thread so as not to disturb the user (as deletes on the HPC can take a long time). This means that we will always return True even if the files were not deleted.
@@ -776,21 +777,22 @@ class UitPlusJob(PbsScript, TethysJob):
             thread.daemon = True
             thread.start()
 
-        # Remove remote locations
-        rm_cmd = "rm -rf {} || true"
-        commands = []
-        if archive:
-            commands.append("archive rm -rf {} || true".format(self.archive_dir))
-            self.set_archived_status(False)
-        else:
-            for path in (self.working_dir, self.home_dir):
-                commands.append(rm_cmd.format(path))
+        if remote:
+            # Remove remote locations
+            rm_cmd = "rm -rf {} || true"
+            commands = []
+            if archive:
+                commands.append("archive rm -rf {} || true".format(self.archive_dir))
+                self.set_archived_status(False)
+            else:
+                for path in (self.working_dir, self.home_dir):
+                    commands.append(rm_cmd.format(path))
 
-        for cmd in commands:
-            thread = threading.Thread(target=self.client.call, kwargs={'command': cmd, 'working_dir': '/'})
-            thread.daemon = True
-            thread.start()
-            log.info(f"Executing command '{cmd}' on {self.system}")
+            for cmd in commands:
+                thread = threading.Thread(target=self.client.call, kwargs={'command': cmd, 'working_dir': '/'})
+                thread.daemon = True
+                thread.start()
+                log.info(f"Executing command '{cmd}' on {self.system}")
 
         return True
 
