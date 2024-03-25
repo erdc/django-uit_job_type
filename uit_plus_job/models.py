@@ -295,8 +295,6 @@ class UitPlusJob(PbsScript, TethysJob):
                 if field_name in pbs_signature.parameters:
                     pbs_kwargs[field_name] = value
 
-        TethysJob.__init__(self, *args, **kwargs)
-
         try:
             PbsScript.__init__(self, **pbs_kwargs)
             self._system_decommissioned = False
@@ -304,9 +302,14 @@ class UitPlusJob(PbsScript, TethysJob):
             if e.args[0].startswith(f'"{self.system}"'):
                 # system is no longer supported
                 self._system_decommissioned = True
-                self.status = 'Purged'
             else:
                 raise e
+
+        # Some database fields get dropped if TethysJob is initialized before PbsScript
+        TethysJob.__init__(self, *args, **kwargs)
+
+        if self._system_decommissioned:
+            self.status = 'Purged'  # Must be set after TethysJob.__init__
 
         self._client = None
         self._token = None
