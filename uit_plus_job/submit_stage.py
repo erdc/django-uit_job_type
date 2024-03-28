@@ -202,7 +202,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     @param.depends('load_type', watch=True)
     def revert(self, e=None):
         if self.load_type == self.param.load_type.objects[0]:
-            self.update_configurable_hpc_parameters()
+            self.update_configurable_hpc_parameters(reset=True)
             self.reset_loading()
         elif self.load_type == self.param.load_type.objects[1]:
             self.select_profile()
@@ -239,7 +239,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         # Create default profile for user if one does not exist
         if len(profiles) == 0:
             log.info("Creating default profile")
-            self.update_configurable_hpc_parameters()
+            self.update_configurable_hpc_parameters(reset=True)
             env_var_json = json.dumps(self.environment_variables)
             modules = {
                 "modules_to_load": self.modules_to_load,
