@@ -37,7 +37,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
     # Parameters to override in subclass
     version_environment_variable = 'VERSION'
-  
+
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
