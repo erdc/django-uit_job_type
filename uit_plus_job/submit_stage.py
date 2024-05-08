@@ -25,7 +25,6 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     version = param.ObjectSelector(label='Set Version Default', precedence=1)
     show_save_panel = param.Boolean()
     show_delete_panel = param.Boolean()
-    show_no_helios_alert = param.Boolean()
     delete_profile_btn = param.Action(lambda self: self.update_delete_panel(True), label='Delete Selected Profile')
     software = param.String()
     notification_email = param.String(label='Notification E-mail')
@@ -35,16 +34,21 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         objects=['Create New Profile', 'Load Saved Profile', 'Load Profile from PBS Script']
     )
     pbs_body = param.String()
+    _software_versions = param.List()
+
 
     # Parameters to override in subclass
     version_environment_variable = 'VERSION'
-    
+  
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.overwrite_request = None
         self.cb = None
+        self.count=0
         self.progress_bar = pn.widgets.misc.Progress(width=250, active=False, visible=False)
         self.alert = pn.pane.Alert(visible=False)
+        self.close_alert_button = pn.widgets.Button(name='X', button_type='danger', margin=(25), width=50, visible=False)
         self.no_version_profiles_alert = pn.pane.Alert(
             'No profiles have been created for the selected version',
             alert_type='warning', visible=False, margin=(0, 5, 20, 5))
@@ -59,16 +63,20 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         self.revert_btn.on_click(self.revert)
         self.profile_panel = pn.Column()
 
-    def get_versions(self, uit_client):
-        """Override this method to provide a list of versions for software.
 
-        Args:
-            uit_client: Client object to connect to HPC
+    def get_versions(self):
+        """Override this method to provide a list of versions for software.
 
         Returns: A list of software versions
 
         """
         return []
+    
+    @property
+    def versions(self):
+        if not self._software_versions:
+            self._software_versions = self.get_versions()
+        return self._software_versions
 
     @param.depends('notification_email', 'environment_variables', 'modules_to_load', 'modules_to_unload', watch=True)
     def update_revert(self):
@@ -164,7 +172,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
     @param.depends('uit_client', watch=True)
     def update_uit_dependant_options(self):
-        self.param.version.objects = ['System Default'] + self.get_versions(self.uit_client)
+        self.param.version.objects = ['System Default'] + self.versions
         self.version = self.version or 'System Default'
 
     @param.depends('version', watch=True)
@@ -341,21 +349,14 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     def _alert(self, message, alert_type="info", timeout=True):
         self._clear_alert()
         self.alert.visible = True
+        self.close_alert_button.visible = True
         self.alert.alert_type = alert_type
         self.alert.object = message
-        if timeout:
-            # Clear the alert after 3 seconds
-            if self.cb is not None and self.cb.running:
-                self.cb.stop()
-            self.cb = pn.state.add_periodic_callback(self._clear_alert, period=10000, count=1)
 
     def _clear_alert(self, e=None):
         self.alert.visible = False
+        self.close_alert_button.visible = False
         self.alert.object = ''
-        # Stop clear timer
-        if self.cb is not None and self.cb.running:
-            self.cb.stop()
-        self.cb = None
 
     def _parse_pbs_body(self):
         """
@@ -516,7 +517,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 pn.Row(delete_btn, align='end')
             )
 
-    @param.depends('show_save_panel', 'show_no_helios_alert')
+    @param.depends('show_save_panel')
     def save_panel(self):
         if self.show_save_panel:
             save_btn = pn.widgets.Button(name='Save', button_type='success', width=100)
@@ -578,7 +579,10 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         options = pn.Column(
             self.load_profile_column(),
             self.profile_panel,
-            self.alert,
+            pn.Row(
+                self.alert,
+                self.close_alert_button,
+                pn.bind(self._clear_alert, self.close_alert_button.param.clicks)),
             pn.layout.Divider(),
             self.profile_management_card,
             name='Environment',
