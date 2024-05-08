@@ -34,6 +34,8 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         objects=['Create New Profile', 'Load Saved Profile', 'Load Profile from PBS Script']
     )
     pbs_body = param.String()
+    _software_versions = param.List()
+
 
     # Parameters to override in subclass
     version_environment_variable = 'VERSION'
@@ -46,7 +48,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         self.count=0
         self.progress_bar = pn.widgets.misc.Progress(width=250, active=False, visible=False)
         self.alert = pn.pane.Alert(visible=False)
-        self.close_alert_button = pn.widgets.Button(name='X', button_type='danger', description='Close alert', margin=(25), width=50, visible=False)
+        self.close_alert_button = pn.widgets.Button(name='X', button_type='danger', margin=(25), width=50, visible=False)
         self.no_version_profiles_alert = pn.pane.Alert(
             'No profiles have been created for the selected version',
             alert_type='warning', visible=False, margin=(0, 5, 20, 5))
@@ -62,11 +64,8 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         self.profile_panel = pn.Column()
 
 
-    def get_versions(self, uit_client):
+    def get_versions(self):
         """Override this method to provide a list of versions for software.
-
-        Args:
-            uit_client: Client object to connect to HPC
 
         Returns: A list of software versions
 
@@ -75,7 +74,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     
     @property
     def versions(self):
-        if self._software_versions is None:
+        if not self._software_versions:
             self._software_versions = self.get_versions()
         return self._software_versions
 
