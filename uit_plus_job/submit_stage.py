@@ -17,19 +17,19 @@ log = logging.getLogger(__name__)
 
 class TethysProfileManagement(PbsScriptAdvancedInputs):
     tethys_user = param.ClassSelector(User)
-    environment_profile = param.ObjectSelector(label="Load Environment Profile")
-    environment_profile_delete = param.ObjectSelector(label="Environment Profile to Delete")
-    environment_profile_version = param.ObjectSelector(allow_None=True, precedence=2)
+    environment_profile = param.Selector(label="Load Environment Profile")
+    environment_profile_delete = param.Selector(label="Environment Profile to Delete")
+    environment_profile_version = param.Selector(allow_None=True, precedence=2)
     save_name = param.String(label='Save As:')
     profiles = param.List()
-    version = param.ObjectSelector(label='Set Version Default', precedence=1)
+    version = param.Selector(label='Set Version Default', precedence=1)
     show_save_panel = param.Boolean()
     show_delete_panel = param.Boolean()
     delete_profile_btn = param.Action(lambda self: self.update_delete_panel(True), label='Delete Selected Profile')
     software = param.String()
     notification_email = param.String(label='Notification E-mail')
     selected_version = param.String()
-    load_type = param.ObjectSelector(
+    load_type = param.Selector(
         default='Load Saved Profile',
         objects=['Create New Profile', 'Load Saved Profile', 'Load Profile from PBS Script']
     )
@@ -56,6 +56,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             self.profile_management_panel, title='Manage Profiles',
             collapsed=False,
             sizing_mode='stretch_width',
+            margin=(10, 0),
         )
         self.revert_btn = pn.widgets.Button(
             name='Revert', button_type='primary', width=100
@@ -107,7 +108,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             'fbp': fbp,
         }
 
-        code = 'prof_col.css_classes.push("pn-loading", "arcs"); prof_col.properties.css_classes.change.emit();'
+        code = 'prof_col.css_classes.push("pn-loading", "pn-arc"); prof_col.properties.css_classes.change.emit();'
         environment_profile.jscallback(args=args, value=code)
 
         load_type.jscallback(args=args, value=f'''
@@ -495,7 +496,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             cancel_btn.on_click(lambda e: self.update_delete_panel(False))
 
             code = 'o.disabled=true; ' \
-                   'btn.css_classes.push("pn-loading", "arcs"); btn.properties.css_classes.change.emit();'
+                   'btn.css_classes.push("pn-loading", "pn-arc"); btn.properties.css_classes.change.emit();'
 
             delete_btn.js_on_click(args={'btn': delete_btn, 'o': cancel_btn}, code=code)
             cancel_btn.js_on_click(args={'btn': cancel_btn, 'o': delete_btn}, code=code)
@@ -509,7 +510,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         else:
             delete_btn = pn.widgets.Button(name='Delete Selected Profile', button_type='danger', width=200)
             delete_btn.on_click(lambda e: self.update_delete_panel(True))
-            code = 'btn.css_classes.push("pn-loading", "arcs"); btn.properties.css_classes.change.emit();'
+            code = 'btn.css_classes.push("pn-loading", "pn-arc"); btn.properties.css_classes.change.emit();'
             delete_btn.js_on_click(args={'btn': delete_btn}, code=code)
 
             return pn.Column(
@@ -526,7 +527,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             cancel_btn.on_click(self.cancel_save)
 
             code = 'o.disabled=true; ' \
-                   'btn.css_classes.push("pn-loading", "arcs"); btn.properties.css_classes.change.emit();'
+                   'btn.css_classes.push("pn-loading", "pn-arc"); btn.properties.css_classes.change.emit();'
 
             save_btn.js_on_click(args={'btn': save_btn, 'o': cancel_btn}, code=code)
             cancel_btn.js_on_click(args={'btn': cancel_btn, 'o': save_btn}, code=code)
@@ -546,7 +547,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             save_btn = pn.widgets.Button(name='Save Current Profile', button_type='success', width=200)
             save_btn.on_click(self.update_save_panel)
 
-            code = 'btn.css_classes.push("pn-loading", "arcs"); btn.properties.css_classes.change.emit();'
+            code = 'btn.css_classes.push("pn-loading", "pn-arc"); btn.properties.css_classes.change.emit();'
 
             save_btn.js_on_click(args={'btn': save_btn, 'o': self.revert_btn}, code=code)
             self.revert_btn.js_on_click(args={'btn': self.revert_btn, 'o': save_btn}, code=code)
