@@ -6,6 +6,7 @@
 * Copyright: (c) Aquaveo 2018
 ********************************************************************************
 """
+
 from datetime import datetime
 
 from social_core.backends.oauth import BaseOAuth2
@@ -16,34 +17,39 @@ class UitPlusOAuth2(BaseOAuth2):
     """
     UIT+ OAuth2 authentication backend.
     """
+
     # backend name
-    name = 'UITPlus'
+    name = "UITPlus"
 
     http_scheme = "https"
     auth_server_hostname = "www.uitplus.hpc.mil"
-    auth_server_full_url = '{}://{}'.format(http_scheme, auth_server_hostname)  # noqa: E222
-    AUTHORIZATION_URL =    '{}/uapi/authorize'.format(auth_server_full_url)  # noqa: E222
-    ACCESS_TOKEN_URL =     '{}/uapi/token'.format(auth_server_full_url)  # noqa: E222
-    USER_DATA_URL =        '{}/uapi/userinfo'.format(auth_server_full_url)  # noqa: E222
+    auth_server_full_url = "{}://{}".format(
+        http_scheme, auth_server_hostname
+    )  # noqa: E222
+    AUTHORIZATION_URL = "{}/uapi/authorize".format(auth_server_full_url)  # noqa: E222
+    ACCESS_TOKEN_URL = "{}/uapi/token".format(auth_server_full_url)  # noqa: E222
+    USER_DATA_URL = "{}/uapi/userinfo".format(auth_server_full_url)  # noqa: E222
 
-    ACCESS_TOKEN_METHOD = 'POST'
-    REFRESH_TOKEN_METHOD = 'POST'
-    DEFAULT_SCOPE = ['UIT']
-    ID_KEY = 'USERNAME'
+    ACCESS_TOKEN_METHOD = "POST"
+    REFRESH_TOKEN_METHOD = "POST"
+    DEFAULT_SCOPE = ["UIT"]
+    ID_KEY = "USERNAME"
 
     EXTRA_DATA = [
-        ('USERNAME', 'email'),
-        ('USERNAME', 'id'),
-        ('SYSTEMS', 'systems'),
-        ('access_token_expires_on', 'expires'),
-        ('refresh_token', 'refresh_token'),
-        ('refresh_token_expires_on', 'refresh_expires_on')
+        ("USERNAME", "email"),
+        ("USERNAME", "id"),
+        ("SYSTEMS", "systems"),
+        ("access_token_expires_on", "expires"),
+        ("refresh_token", "refresh_token"),
+        ("refresh_token_expires_on", "refresh_expires_on"),
     ]
 
     def extra_data(self, user, uid, response, details=None, *args, **kwargs):
         # convert date string to timestamp
-        expires_time = datetime.fromisoformat(response['access_token_expires_on'].replace('Z', ''))
-        response['access_token_expires_on'] = datetime.timestamp(expires_time)
+        expires_time = datetime.fromisoformat(
+            response["access_token_expires_on"].replace("Z", "")
+        )
+        response["access_token_expires_on"] = datetime.timestamp(expires_time)
         return super().extra_data(user, uid, response, details, *args, **kwargs)
 
     def get_user_details(self, response):
@@ -51,12 +57,12 @@ class UitPlusOAuth2(BaseOAuth2):
         Extract HPC account details from the given API response.
         """
         # Build user details from HPC username
-        hpc_username = response.get('USERNAME', None)
+        hpc_username = response.get("USERNAME", None)
 
         if hpc_username:
             return {
-                'username': hpc_username.split('@')[0],
-                'email': hpc_username,
+                "username": hpc_username.split("@")[0],
+                "email": hpc_username,
             }
         else:
             return {}
@@ -66,17 +72,16 @@ class UitPlusOAuth2(BaseOAuth2):
         Map user data from service to appropriate user attributes.
         """
         # Data returned by the get token call
-        response = kwargs.get('response', {})
+        response = kwargs.get("response", {})
 
         try:
             # Get the user data from user data endpoint
             user_data = self.get_json(
-                self.USER_DATA_URL,
-                headers={'x-uit-auth-token': access_token}
+                self.USER_DATA_URL, headers={"x-uit-auth-token": access_token}
             )
 
             # Pull out the user info
-            user_data = user_data.get('userinfo', {})
+            user_data = user_data.get("userinfo", {})
 
             # Add user data to the get token response
             user_data.update(response)
@@ -86,5 +91,5 @@ class UitPlusOAuth2(BaseOAuth2):
             # Return the get token response if errors occur
             return response
 
-    def request(self, url, method='GET', *args, **kwargs):
-        return super().request(url=url, method=method, verify=DEFAULT_CA_FILE, *args, **kwargs)
+    def request(self, url, method="GET", *args, **kwargs):  # noqa: B026
+        return super().request(url, method, *args, verify=DEFAULT_CA_FILE, **kwargs)
