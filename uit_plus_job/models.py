@@ -11,8 +11,6 @@ from collections import OrderedDict
 from pathlib import Path, PurePosixPath
 from functools import partial
 from django.db import models
-from django.db.models.signals import pre_delete
-from django.dispatch import receiver
 from django.utils import timezone
 from django.db.models import JSONField
 from django.contrib.auth.models import User
@@ -23,7 +21,7 @@ from uit.pbs_script import PbsDirective, NODE_TYPES
 from tethys_compute.models.tethys_job import TethysJob
 
 
-log = logging.getLogger('tethys.' + __name__)
+log = logging.getLogger("tethys." + __name__)
 
 
 class EnvironmentProfile(models.Model):
@@ -39,6 +37,7 @@ class EnvironmentProfile(models.Model):
         modules (str): A Json string of the modules to load and unload
         last_used (datetime): The time the profile was last loaded (for sorting)
     """
+
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=64)
     hpc_system = models.CharField(max_length=64)
@@ -63,7 +62,9 @@ class EnvironmentProfile(models.Model):
 
         """
         # Find current default for version
-        ver_default = cls._get_default_for_version(usr, profile.hpc_system, profile.software, version)
+        ver_default = cls._get_default_for_version(
+            usr, profile.hpc_system, profile.software, version
+        )
         if ver_default:
             # Remove version from its list of defaults
             ver_default.default_for_versions.remove(version)
@@ -86,7 +87,9 @@ class EnvironmentProfile(models.Model):
 
         """
         # Get current default
-        old_default = cls._get_general_default(usr, profile.hpc_system, profile.software)
+        old_default = cls._get_general_default(
+            usr, profile.hpc_system, profile.software
+        )
         if old_default:
             # Remove the old default as general default
             old_default.user_default = False
@@ -99,7 +102,9 @@ class EnvironmentProfile(models.Model):
         profile.save()
 
     @classmethod
-    def get_default(cls, usr, hpc_system, software, version=None, use_general_default=True):
+    def get_default(
+        cls, usr, hpc_system, software, version=None, use_general_default=True
+    ):
         """Get the default for this version. Return the general default if it doesn't exist.
 
         Args:
@@ -119,7 +124,7 @@ class EnvironmentProfile(models.Model):
 
         return cls._get_general_default(usr, hpc_system, software)
 
-    @ classmethod
+    @classmethod
     def _get_default_for_version(cls, usr, hpc_system, software, version):
         """
         Get the profile listed as default for the specified version
@@ -153,11 +158,15 @@ class EnvironmentProfile(models.Model):
 
         """
         try:
-            profiles = cls.objects.get(user=usr, hpc_system=hpc_system, software=software, user_default=True)
+            profiles = cls.objects.get(
+                user=usr, hpc_system=hpc_system, software=software, user_default=True
+            )
         except cls.DoesNotExist:
             return None
         except cls.MultipleObjectsReturned:
-            return cls.objects.filter(user=usr, hpc_system=hpc_system, software=software, user_default=True)[0]
+            return cls.objects.filter(
+                user=usr, hpc_system=hpc_system, software=software, user_default=True
+            )[0]
 
         return profiles
 
@@ -210,25 +219,28 @@ class UitPlusJob(PbsScript, TethysJob):
         transfer_job_script (bool): transfer the job_script from the app to the working directory when True. Defaults to True.
         transfer_output_files (list): files to transfer from the working directory to the job workspace in the app after the job has finished running
     """  # noqa: E501
+
     UIT_TO_TETHYS_STATUSES = {
-        None: 'PEN',  # No status set so job was just created
-        'B': 'RUN',  # Array job: at least one subjob has started
-        'E': 'COM',  # Job is exiting after having run.
-        'F': 'COM',  # Job is finished.
-        'H': 'PAS',  # Job is held.
-        'M': 'SUB',  # Job was moved to another server.
-        'Q': 'SUB',  # Job is queued.
-        'R': 'RUN',  # Job is running.
-        'S': 'ABT',  # Job is suspended.
-        'T': 'SUB',  # Job is being moved to a new location.
-        'U': 'ABT',  # Cycle-harvesting job is suspended due to keyboard activity.
-        'W': 'SUB',  # Job is waiting for its submitter-assigned start time to be reached.
-        'X': 'RUN',  # Subjob has completed execution or has been deleted.
+        None: "PEN",  # No status set so job was just created
+        "B": "RUN",  # Array job: at least one subjob has started
+        "E": "COM",  # Job is exiting after having run.
+        "F": "COM",  # Job is finished.
+        "H": "PAS",  # Job is held.
+        "M": "SUB",  # Job was moved to another server.
+        "Q": "SUB",  # Job is queued.
+        "R": "RUN",  # Job is running.
+        "S": "ABT",  # Job is suspended.
+        "T": "SUB",  # Job is being moved to a new location.
+        "U": "ABT",  # Cycle-harvesting job is suspended due to keyboard activity.
+        "W": "SUB",  # Job is waiting for its submitter-assigned start time to be reached.
+        "X": "RUN",  # Subjob has completed execution or has been deleted.
     }
 
     SYSTEM_CHOICES = [(s, s) for s in sorted(NODE_TYPES.keys())]
 
-    NODE_TYPE_CHOICES = [(nt, nt) for nt in sorted({nt for s in NODE_TYPES.values() for nt in s.keys()})]
+    NODE_TYPE_CHOICES = [
+        (nt, nt) for nt in sorted({nt for s in NODE_TYPES.values() for nt in s.keys()})
+    ]
 
     # job vars
     job_id = models.CharField(max_length=1024, null=True)
@@ -245,9 +257,13 @@ class UitPlusJob(PbsScript, TethysJob):
     num_nodes = models.IntegerField(default=1, null=False)
     processes_per_node = models.IntegerField(default=1, null=False)
     _max_time = models.DurationField(null=False)
-    queue = models.CharField(max_length=100, default='debug', null=False)
-    node_type = models.CharField(max_length=10, choices=NODE_TYPE_CHOICES, default='compute', null=False)
-    system = models.CharField(max_length=10, choices=SYSTEM_CHOICES, default='onyx', null=False)
+    queue = models.CharField(max_length=100, default="debug", null=False)
+    node_type = models.CharField(
+        max_length=10, choices=NODE_TYPE_CHOICES, default="compute", null=False
+    )
+    system = models.CharField(
+        max_length=10, choices=SYSTEM_CHOICES, default="onyx", null=False
+    )
     execution_block = models.TextField(null=False)
     _modules = JSONField(default=dict, null=True)
     _module_use = JSONField(default=dict, null=True)
@@ -265,8 +281,12 @@ class UitPlusJob(PbsScript, TethysJob):
     transfer_job_script = models.BooleanField(default=True)
     transfer_output_files = JSONField(blank=True, default=list, null=True)
     custom_logs = JSONField(default=dict, null=False)
-    _process_intermediate_results_function = models.CharField(max_length=1024, null=True)
-    _update_status_interval = dt.timedelta(seconds=30)  # This is not effective until jobs table uses WS
+    _process_intermediate_results_function = models.CharField(
+        max_length=1024, null=True
+    )
+    _update_status_interval = dt.timedelta(
+        seconds=30
+    )  # This is not effective until jobs table uses WS
 
     def __init__(self, *args, **kwargs):
         """Constructor."""
@@ -282,14 +302,16 @@ class UitPlusJob(PbsScript, TethysJob):
         # Handle case when Django models are instantiated manually with kwargs
         if kwargs:
             for param in pbs_signature.parameters.keys():
-                if param != 'self':
+                if param != "self":
                     pbs_kwargs[param] = kwargs.get(param, None)
 
         # When a Django model loads objects from the database, it passes in args, not kwargs
         if len(args) + 1 == len(upj_fields):
             # Get list of field names in the order Django passes them in
-            all_field_names = [field.name for field in upj_fields if field.name != 'tethysjob_ptr']
-            all_field_names[all_field_names.index('_max_time')] = 'max_time'
+            all_field_names = [
+                field.name for field in upj_fields if field.name != "tethysjob_ptr"
+            ]
+            all_field_names[all_field_names.index("_max_time")] = "max_time"
             # Match up given arg values with field names
             for field_name, value in zip(all_field_names, args):
                 if field_name in pbs_signature.parameters:
@@ -309,7 +331,7 @@ class UitPlusJob(PbsScript, TethysJob):
         TethysJob.__init__(self, *args, **kwargs)
 
         if self._system_decommissioned:
-            self.status = 'Purged'  # Must be set after TethysJob.__init__
+            self.status = "Purged"  # Must be set after TethysJob.__init__
 
         self._client = None
         self._token = None
@@ -335,7 +357,6 @@ class UitPlusJob(PbsScript, TethysJob):
             workspace=job.workspace.as_posix(),
             description=job.description,
             extended_properties=job.metadata,
-
             job_id=job.job_id,
             _status=cls.UIT_TO_TETHYS_STATUSES.get(job.status),
             qstat=job.qstat,
@@ -351,7 +372,6 @@ class UitPlusJob(PbsScript, TethysJob):
             _modules=script._modules,
             _module_use=script._module_use,
             _array_indices=script._array_indices,
-
             # max_cleanup_time=None,
             home_input_files=job.home_input_files,
             home_output_files=[],
@@ -374,7 +394,9 @@ class UitPlusJob(PbsScript, TethysJob):
     @property
     def pbs_job(self):
         if self._system_decommissioned:
-            raise RuntimeError('The PBS Job is not available on jobs from systems that have been decommissioned.')
+            raise RuntimeError(
+                "The PBS Job is not available on jobs from systems that have been decommissioned."
+            )
         if self._pbs_job is None:
             Job = PbsJob if not self._array_indices else PbsArrayJob
             j = Job(
@@ -393,11 +415,13 @@ class UitPlusJob(PbsScript, TethysJob):
             j._job_id = self.job_id
             j._status = self._status
             j._qstat = self.qstat
-            j._post_processing_job_id = self.extended_properties.get('post_processing_job_id')
+            j._post_processing_job_id = self.extended_properties.get(
+                "post_processing_job_id"
+            )
             if self._array_indices and self.qstat is not None:
                 for sub_job in j.sub_jobs:
                     sub_job._qstat = self.qstat.get(sub_job.job_id)
-                    sub_job._status = sub_job.qstat.get('status')
+                    sub_job._status = sub_job.qstat.get("status")
             self._pbs_job = j
         return self._pbs_job
 
@@ -424,7 +448,9 @@ class UitPlusJob(PbsScript, TethysJob):
             return PbsDirective(*directive_str)
         if isinstance(directive_str, PbsDirective):
             return directive_str
-        m = re.match("PbsDirective\(directive='(.*?)', options='(.*?)'\)", directive_str)
+        m = re.match(
+            r"PbsDirective\(directive='(.*?)', options='(.*?)'\)", directive_str
+        )
         return PbsDirective(*m.groups())
 
     @property
@@ -435,13 +461,15 @@ class UitPlusJob(PbsScript, TethysJob):
             str: Archive Directory
         """
         if self._archive_dir is None:
-            archive_home = self.get_environment_variable('ARCHIVE_HOME')
-            self._archive_dir = posixpath.join(archive_home, self.remote_workspace_suffix)
+            archive_home = self.get_environment_variable("ARCHIVE_HOME")
+            self._archive_dir = posixpath.join(
+                archive_home, self.remote_workspace_suffix
+            )
         return self._archive_dir
 
     @property
     def workflow_type(self):
-        return self.label.split('/')[-1]
+        return self.label.split("/")[-1]
 
     @property
     def client(self):
@@ -480,7 +508,8 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         if self._process_intermediate_results_function:
             function_extractor = TethysFunctionExtractor(
-                self._process_intermediate_results_function, None)
+                self._process_intermediate_results_function, None
+            )
             if function_extractor.valid:
                 return function_extractor.function
 
@@ -489,9 +518,9 @@ class UitPlusJob(PbsScript, TethysJob):
         if isinstance(function, str):
             self._process_results_function = function
             return
-        module_path = inspect.getmodule(function).__name__.split('.')
+        module_path = inspect.getmodule(function).__name__.split(".")
         module_path.append(function.__name__)
-        self._process_results_function = '.'.join(module_path)
+        self._process_results_function = ".".join(module_path)
 
     @property
     def remote_workspace_id(self):
@@ -526,8 +555,8 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         if self._token is None:
             try:
-                social = self.user.social_auth.get(provider='UITPlus')
-                self._token = social.extra_data['access_token']
+                social = self.user.social_auth.get(provider="UITPlus")
+                self._token = social.extra_data["access_token"]
             except (KeyError, AttributeError):
                 self._token = None
         return self._token
@@ -543,24 +572,30 @@ class UitPlusJob(PbsScript, TethysJob):
 
     def is_job_archived(self):
         archive_filename = f"job_{self.remote_workspace_id}.run_files.tar.gz"
-        archive_files = self.client.list_dir(self.archive_dir).get('files', [])
-        return archive_filename in [file['name'] for file in archive_files]
+        archive_files = self.client.list_dir(self.archive_dir).get("files", [])
+        return archive_filename in [file["name"] for file in archive_files]
 
     def get_logs(self):
         if isinstance(self.pbs_job, PbsArrayJob):
             logs = {}
             for sub_job in self.pbs_job.sub_jobs:
-                name = f'{sub_job.name}_{sub_job.job_index}'
+                name = f"{sub_job.name}_{sub_job.job_index}"
                 logs[name] = {}
-                logs[name]['stdout'] = sub_job.get_stdout_log
-                logs[name]['stderr'] = sub_job.get_stderr_log
-                logs[name].update({log_type: partial(sub_job.get_cached_file_contents, path, bytes=100_000)
-                                   for log_type, path in self.custom_logs.items()})
+                logs[name]["stdout"] = sub_job.get_stdout_log
+                logs[name]["stderr"] = sub_job.get_stderr_log
+                logs[name].update(
+                    {
+                        log_type: partial(
+                            sub_job.get_cached_file_contents, path, bytes=100_000
+                        )
+                        for log_type, path in self.custom_logs.items()
+                    }
+                )
             return logs
 
         return {
-            'stdout': self.pbs_job.get_stdout_log,
-            'stderr': self.pbs_job.get_stderr_log,
+            "stdout": self.pbs_job.get_stdout_log,
+            "stderr": self.pbs_job.get_stderr_log,
         }
 
     def get_environment_variable(self, variable):
@@ -579,20 +614,24 @@ class UitPlusJob(PbsScript, TethysJob):
         try:
             # Submit job with PbsScript object and remote workspace
             self.job_id = self.pbs_job.submit(remote_name=remote_name)
-            self.extended_properties['post_processing_job_id'] = self.pbs_job.post_processing_job_id
+            self.extended_properties["post_processing_job_id"] = (
+                self.pbs_job.post_processing_job_id
+            )
         except UITError as e:
-            if 'allocation' in str(e):
-                self.status_message = 'Submission failed because subproject allocation has expired or there are ' \
-                                      'insufficient hours.'
+            if "allocation" in str(e):
+                self.status_message = (
+                    "Submission failed because subproject allocation has expired or there are "
+                    "insufficient hours."
+                )
             else:
                 self.status_message = str(e)
             log.exception(e)
             raise e
         except Exception as e:
             try:
-                self.client.call(f'ls {self.working_dir}/*.pbs')
-            except:
-                self.status_message = 'No PBS script created. Contact web site administrator for resolution.'
+                self.client.call(f"ls {self.working_dir}/*.pbs")
+            except Exception:
+                self.status_message = "No PBS script created. Contact web site administrator for resolution."
             else:
                 self.status_message = f'Error submitting job on "{self.system}": {e}'
             log.exception(e)
@@ -614,19 +653,21 @@ class UitPlusJob(PbsScript, TethysJob):
         try:
             status = self.pbs_job.update_status()
         except UITError as e:
-            if 'qstat: Unknown Job Id' in str(e):
-                status = 'F'
-                self.status_message = f'Job ID was not found on {self.client.system}. ' \
-                                      f'Unable to get status information.'
+            if "qstat: Unknown Job Id" in str(e):
+                status = "F"
+                self.status_message = (
+                    f"Job ID was not found on {self.client.system}. "
+                    f"Unable to get status information."
+                )
             else:
                 raise e
-        new_status = self.UIT_TO_TETHYS_STATUSES.get(status, 'ERR')
+        new_status = self.UIT_TO_TETHYS_STATUSES.get(status, "ERR")
 
         if new_status == "COM":
-            if 'cleanup_job_id' in self.extended_properties:
-                if self.job_id != self.extended_properties['cleanup_job_id']:
+            if "cleanup_job_id" in self.extended_properties:
+                if self.job_id != self.extended_properties["cleanup_job_id"]:
                     new_status = "SUB"
-                    self.job_id = self.extended_properties['']
+                    self.job_id = self.extended_properties[""]
             # else:
             #     raise RuntimeError("Could not find cleanup script ID.")
             self.set_archived_status(True)
@@ -645,7 +686,7 @@ class UitPlusJob(PbsScript, TethysJob):
         self.save()
 
     def set_archived_status(self, value):
-        archived_job_id = self.extended_properties.get('archived_job_id')
+        archived_job_id = self.extended_properties.get("archived_job_id")
         if archived_job_id:
             try:
                 archived_job = self.__class__.objects.get(job_id=archived_job_id)
@@ -658,7 +699,7 @@ class UitPlusJob(PbsScript, TethysJob):
     def intermediate_transfer_interval_exceeded(self):
         if self.intermediate_transfer_interval == 0:
             return True
-        delta_time = (timezone.now() - self.last_intermediate_transfer)
+        delta_time = timezone.now() - self.last_intermediate_transfer
         minutes = delta_time.days * 24 * 60 + delta_time.seconds / 60
         return minutes > self.intermediate_transfer_interval
 
@@ -675,7 +716,7 @@ class UitPlusJob(PbsScript, TethysJob):
     def resolve_paths(self, paths):
         resolved_paths = []
         for p in paths:
-            if '$JOB_INDEX' in p or '$RUN_DIR' in p:
+            if "$JOB_INDEX" in p or "$RUN_DIR" in p:
                 for sub_job in self.pbs_job.sub_jobs:
                     resolved_paths.append(sub_job.resolve_path(p))
             else:
@@ -720,9 +761,9 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         result = self.pbs_job.terminate()
         if result:
-            self.update_status('ABT')
+            self.update_status("ABT")
         else:
-            self.update_status('ERR')
+            self.update_status("ERR")
         return result
 
     def pause(self):
@@ -742,14 +783,13 @@ class UitPlusJob(PbsScript, TethysJob):
         return self.pbs_job.release()
 
     def delete(self, using=None, keep_parents=False):
-        """Stops the job and cleans up workspaces in order to delete the job.
-        """
+        """Stops the job and cleans up workspaces in order to delete the job."""
         try:
-            archive = bool(self.extended_properties.get('archived_job_id'))
+            archive = bool(self.extended_properties.get("archived_job_id"))
             if not self._system_decommissioned:
                 stop_result = self.stop()
                 if stop_result is False:
-                    raise Exception('Delete failed while performing job cleanup.')
+                    raise Exception("Delete failed while performing job cleanup.")
 
             clean_remote = not self._system_decommissioned
             try:
@@ -775,7 +815,7 @@ class UitPlusJob(PbsScript, TethysJob):
         """  # noqa: E501
         # Remove local workspace
         if self.workspace:
-            log.warning(f'Removing local workspace {self.workspace}')
+            log.warning(f"Removing local workspace {self.workspace}")
             thread = threading.Thread(target=shutil.rmtree, args=(self.workspace, True))
             thread.daemon = True
             thread.start()
@@ -792,7 +832,9 @@ class UitPlusJob(PbsScript, TethysJob):
                     commands.append(rm_cmd.format(path))
 
             for cmd in commands:
-                thread = threading.Thread(target=self.client.call, kwargs={'command': cmd, 'working_dir': '/'})
+                thread = threading.Thread(
+                    target=self.client.call, kwargs={"command": cmd, "working_dir": "/"}
+                )
                 thread.daemon = True
                 thread.start()
                 log.info(f"Executing command '{cmd}' on {self.system}")
@@ -801,7 +843,7 @@ class UitPlusJob(PbsScript, TethysJob):
 
     @property
     def archive_filename(self):
-        return f'job_{self.remote_workspace_id}.run_files.tar.gz'
+        return f"job_{self.remote_workspace_id}.run_files.tar.gz"
 
     def archive(self):
         """Archive all files associated with this job.
@@ -826,14 +868,14 @@ class UitPlusJob(PbsScript, TethysJob):
 
         archive_filename = f"job_{self.remote_workspace_id}.run_files.tar.gz"
         pbs_script = PbsScript(
-                name='archive',
-                project_id=self.pbs_job.script.project_id,
-                num_nodes=1,
-                processes_per_node=1,
-                max_time="48:00:00",
-                queue="transfer",
-                node_type="transfer",
-                system=self.system
+            name="archive",
+            project_id=self.pbs_job.script.project_id,
+            num_nodes=1,
+            processes_per_node=1,
+            max_time="48:00:00",
+            queue="transfer",
+            node_type="transfer",
+            system=self.system,
         )
         pbs_script.execution_block = (
             f"tar -czf {archive_filename} *\n"
@@ -842,37 +884,42 @@ class UitPlusJob(PbsScript, TethysJob):
         )
 
         # Create PBS job
-        job = PbsJob(pbs_script, client=self.client, label="archive_"+self.label)
+        job = PbsJob(pbs_script, client=self.client, label="archive_" + self.label)
         job._remote_workspace = self._remote_workspace
         job._remote_workspace_id = self._remote_workspace_id
 
-        job.description = f'Archive job: {self.name} ({self.job_id})'
+        job.description = f"Archive job: {self.name} ({self.job_id})"
         job_model = self.instance_from_pbs_job(job, self.user)
         # Put job id in extended properties
         save_script_attrs = [
-            'name', 'project_id', 'num_nodes',
-            'processes_per_node', 'queue',
-            'system', '_array_indices'
+            "name",
+            "project_id",
+            "num_nodes",
+            "processes_per_node",
+            "queue",
+            "system",
+            "_array_indices",
         ]
 
         self.metadata = self.extended_properties
-        save_job_attrs = ['label', 'workspace', 'description', 'metadata']
+        save_job_attrs = ["label", "workspace", "description", "metadata"]
 
-        job_model.extended_properties.update({
-            "archived_job_id": self.job_id,
-            "archived_to": archive_name,
-            "archived_job_script": {
-                attr: getattr(self, attr) for attr in save_script_attrs
-            },
-            "archived_job_attrs": {
-                attr: getattr(self, attr) for attr in save_job_attrs
+        job_model.extended_properties.update(
+            {
+                "archived_job_id": self.job_id,
+                "archived_to": archive_name,
+                "archived_job_script": {
+                    attr: getattr(self, attr) for attr in save_script_attrs
+                },
+                "archived_job_attrs": {
+                    attr: getattr(self, attr) for attr in save_job_attrs
+                },
             }
-        })
+        )
         # Add max_time
-        max_time_json = {'days': self.max_time.days,
-                         'seconds': self.max_time.seconds}
-        job_model.extended_properties['archived_job_script']['max_time'] = max_time_json
-        job_model.workspace = ''
+        max_time_json = {"days": self.max_time.days, "seconds": self.max_time.seconds}
+        job_model.extended_properties["archived_job_script"]["max_time"] = max_time_json
+        job_model.workspace = ""
 
         # Submit job
         job_model.execute()
@@ -894,7 +941,7 @@ class UitPlusJob(PbsScript, TethysJob):
             f"tar -xzf {archive_filename}\n"
             f"rm {archive_filename}\n"
         )
-        self.name = 'unarchive'
+        self.name = "unarchive"
 
         # Submit job
         self.resubmit()
@@ -910,7 +957,9 @@ class UitPlusJob(PbsScript, TethysJob):
                 array_indices = script_kwargs.pop("_array_indices")
                 script_kwargs["max_time"] = dt.timedelta(**script_kwargs["max_time"])
                 # Setup PbsScript
-                restored_job_script = PbsScript(**script_kwargs, array_indices=array_indices)
+                restored_job_script = PbsScript(
+                    **script_kwargs, array_indices=array_indices
+                )
 
                 Job = PbsJob if array_indices is None else PbsArrayJob
                 job_kwargs = self.extended_properties["archived_job_attrs"]
