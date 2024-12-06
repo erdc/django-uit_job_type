@@ -42,7 +42,6 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     )
     pbs_body = param.String()
     _software_versions = param.List()
-    _async_versions = param.Parameter()
 
     # Parameters to override in subclass
     version_environment_variable = "VERSION"
@@ -78,7 +77,11 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             sizing_mode="stretch_width",
             margin=(10, 0),
         )
-        self.profile_panel = pn.Column()
+        self._advanced_options_layout = pn.Column(name="Environment", loading=True)
+        self._layout = pn.Column(
+            "# Environment Profiles",
+            self._advanced_options_layout,
+        )
 
     def get_versions(self):
         """Override this method to provide a list of versions for software.
@@ -219,6 +222,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         versions = await self.get_cached_versions()
         self.param.version.objects = ["System Default"] + versions
         self.version = self.version or "System Default"
+        await self.create_advanced_options_view()
 
     @param.depends("version", watch=True)
     async def update_version_profiles(self):
@@ -262,11 +266,11 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     async def revert(self, e=None):
         if self.load_type == self.param.load_type.objects[0]:
             await self.update_configurable_hpc_parameters(reset=True)
-            self.reset_loading()
         elif self.load_type == self.param.load_type.objects[1]:
             self.select_profile()
         elif self.load_type == self.param.load_type.objects[2]:
             self._populate_from_pbs()
+        self.reset_loading()
         self.param.trigger("show_save_panel")
 
     @database_sync_to_async
@@ -317,7 +321,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 "modules_to_unload": self.modules_to_unload,
             }
 
-            saving_profile = self._save_profile(
+            saving_profile = await self._save_profile(
                 user=self.tethys_user,
                 environment_variables=env_var_json,
                 modules=modules,
@@ -403,7 +407,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 version_default = await self.get_default_profile(version)
                 default_for_versions = [version] if version_default is None else []
 
-                saving_profile = self._save_profile(
+                saving_profile = await self._save_profile(
                     user=self.tethys_user,
                     environment_variables=env_var_json,
                     modules=modules,
@@ -660,7 +664,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 sizing_mode="stretch_width",
             )
 
-    async def advanced_options_view(self):
+    async def create_advanced_options_view(self):
         """
         Overrides HpcSubmit function in order to
         add a panel to select environment profiles.
@@ -682,7 +686,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         self.profile_panel.append(self.save_panel)
         self.profile_panel.sizing_mode = "stretch_width"
 
-        options = pn.Column(
+        self._advanced_options_layout[:] = [
             self.load_profile_column(),
             self.profile_panel,
             pn.Row(
@@ -692,17 +696,14 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             ),
             pn.layout.Divider(),
             self.profile_management_card,
-            name="Environment",
-        )
-        return options
+        ]
+        self._advanced_options_layout.loading = False
 
-    async def panel(self):
-        try:
-            options = await self.advanced_options_view()
-            options.insert(0, "# Environment Profiles")
-            return options
-        except Exception as e:
-            log.exception(e)
+    def advanced_options_view(self):
+        return self._advanced_options_layout
+
+    def panel(self):
+        return self._layout
 
 
 class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
@@ -769,7 +770,7 @@ class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
         for btn in row:
             if btn.name in ["Submit", "Cancel"]:
                 btn.js_on_click(
-                    code=f'setTimeout(function(){{window.location.href="{self.redirect_url}";}}, 1000)'
+                    code=f'setTimeout(function(){{window.location.href="{self.redirect_url}";}}, 2000)'
                 )
 
         return row

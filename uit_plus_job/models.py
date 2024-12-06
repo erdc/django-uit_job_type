@@ -215,6 +215,10 @@ class UitPlusJob(PbsScript, TethysJob):
         if self._client is not None:
             await self.client.safe_close()
 
+    @database_sync_to_async
+    def _safe_delete(self, using, keep_parents):
+        super().delete(using, keep_parents)
+
     @classmethod
     @database_sync_to_async
     def instance_from_pbs_job(cls, job, user):
@@ -748,7 +752,7 @@ class UitPlusJob(PbsScript, TethysJob):
         except Exception as e:
             log.exception(f"Error during job delete: {e}")
             raise  # Let Django know to display the error message to the user
-        super().delete(using, keep_parents)
+        await self._safe_delete(using, keep_parents)
 
     # TODO if I make this async it probably needs to stop doing threading
     def clean(self, archive=False, remote=True):
