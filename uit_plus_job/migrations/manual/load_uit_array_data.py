@@ -20,28 +20,28 @@ import json
 
 from uit_plus_job.models import EnvironmentProfile, UitPlusJob
 
-json_data = json.load(open('uit_db.json'))
+json_data = json.load(open("uit_db.json"))
 model_data = {}
 
 for row in json_data:
-    value = model_data.setdefault(row['model'], {})
-    value[row['pk']] = row['fields']
+    value = model_data.setdefault(row["model"], {})
+    value[row["pk"]] = row["fields"]
 
-key = f'{EnvironmentProfile._meta.app_label}.{EnvironmentProfile._meta.model_name}'
+key = f"{EnvironmentProfile._meta.app_label}.{EnvironmentProfile._meta.model_name}"
 data = model_data[key]
 
 for ep in EnvironmentProfile.objects.all():
-    ep.default_for_versions = data[ep.pk]['default_for_versions']
+    ep.default_for_versions = data[ep.pk]["default_for_versions"]
     ep.save()
 
-key = f'{UitPlusJob._meta.app_label}.{UitPlusJob._meta.model_name}'
+key = f"{UitPlusJob._meta.app_label}.{UitPlusJob._meta.model_name}"
 data = model_data[key]
 
 for job in UitPlusJob.objects.all():
     row_data = data[job.pk]
-    job._optional_directives = json.loads(row_data['_optional_directives'])
-    if row_data['_array_indices']:
-        job._array_indices = [int(i) for i in json.loads(row_data['_array_indices'])]
+    job._optional_directives = json.loads(row_data["_optional_directives"])
+    if row_data["_array_indices"]:
+        job._array_indices = [int(i) for i in json.loads(row_data["_array_indices"])]
     else:
         job._array_indices = None
     job.save()
