@@ -1,5 +1,5 @@
-import mock
 import datetime
+from unittest import mock
 from uit_plus_job.models import UitPlusJob
 from uit.exceptions import DpRouteError
 from django.contrib.auth.models import User
