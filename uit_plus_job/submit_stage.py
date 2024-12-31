@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 
 
 class TethysProfileManagement(PbsScriptAdvancedInputs):
-    tethys_user = param.ClassSelector(User)
+    tethys_user = param.ClassSelector(class_=User)
     environment_profile = param.Selector(label="Load Environment Profile")
     environment_profile_delete = param.Selector(label="Environment Profile to Delete")
     environment_profile_version = param.Selector(allow_None=True, precedence=2)
