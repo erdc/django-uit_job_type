@@ -327,18 +327,15 @@ class UitPlusJob(PbsScript, TethysJob):
         )
         return PbsDirective(*m.groups())
 
-    @property
-    def archive_dir(self):
+    async def get_archive_dir(self):
         """Get the job archive directory from the HPC.
 
         Returns:
             str: Archive Directory
         """
         if self._archive_dir is None:
-            archive_home = self.get_environment_variable("ARCHIVE_HOME")
-            self._archive_dir = posixpath.join(
-                archive_home, self.remote_workspace_suffix
-            )
+            archive_home = await self.get_environment_variable("ARCHIVE_HOME")
+            self._archive_dir = posixpath.join(archive_home, self.remote_workspace_suffix)
         return self._archive_dir
 
     @property
@@ -450,9 +447,9 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         return self.pbs_job.working_dir
 
-    def is_job_archived(self):
+    async def is_job_archived(self):
         archive_filename = f"job_{self.remote_workspace_id}.run_files.tar.gz"
-        archive_files = self.client.list_dir(self.archive_dir).get("files", [])
+        archive_files = self.client.list_dir(await self.get_archive_dir()).get("files", [])
         return archive_filename in [file["name"] for file in archive_files]
 
     @_ensure_connected
@@ -485,7 +482,7 @@ class UitPlusJob(PbsScript, TethysJob):
             },
         }
 
-    def get_environment_variable(self, variable):
+    async def get_environment_variable(self, variable):
         """Get the value of an environment variable from the HPC.
 
         Args:
@@ -494,7 +491,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             str: value of environment variable.
         """
-        return self.client.env.get(variable)
+        return await self.client.env.get_environmental_variable(variable)
 
     @_ensure_connected
     async def execute(self, *args, **kwargs):
@@ -825,7 +822,7 @@ class UitPlusJob(PbsScript, TethysJob):
         )
         pbs_script.execution_block = (
             f"tar -czf {archive_filename} *\n"
-            f"archive put -p -C {self.archive_dir} {archive_filename}\n"
+            f"archive put -p -C {await self.get_archive_dir()} {archive_filename}\n"
             f"rm {archive_filename}\n"
         )
 
@@ -884,7 +881,7 @@ class UitPlusJob(PbsScript, TethysJob):
 
         # Create transfer script
         self.execution_block = (
-            f"archive get -p -C {self.archive_dir} {archive_filename}\n"
+            f"archive get -p -C {await self.get_archive_dir()} {archive_filename}\n"
             f"tar -xzf {archive_filename}\n"
             f"rm {archive_filename}\n"
         )
