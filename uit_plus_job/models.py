@@ -631,6 +631,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 thread.start()
         await self._safe_save()
 
+    @database_sync_to_async
     def set_archived_status(self, value):
         archived_job_id = self.extended_properties.get("archived_job_id")
         if archived_job_id:
