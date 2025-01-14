@@ -892,7 +892,11 @@ class UitPlusJob(PbsScript, TethysJob):
         await self.resubmit()
 
         # Check database for archived job
-        job_id = self.extended_properties.get("archived_job_id")
+        self.update_job_after_restore(self.extended_properties.get("archived_job_id"))
+
+    @database_sync_to_async
+    def update_job_after_restore(self, job_id):
+        """After restoring from the archive, recreate job in the main jobs_table if it does not already exist"""
         if job_id is not None:
             try:
                 self.__class__.objects.get(job_id=job_id)
@@ -912,7 +916,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 pbs_job._remote_workspace = self._remote_workspace
                 pbs_job._remote_workspace_id = self._remote_workspace_id
                 pbs_job._job_id = job_id
-                restored = await self.instance_from_pbs_job(pbs_job, self.user)
+                restored = self.instance_from_pbs_job(pbs_job, self.user)
                 restored.status = "Complete"
                 restored.save()
 
