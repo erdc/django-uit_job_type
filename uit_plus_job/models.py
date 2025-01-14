@@ -774,14 +774,14 @@ class UitPlusJob(PbsScript, TethysJob):
 
             if remote:
                 # Remove remote locations
-                rm_cmd = "rm -rf {} || true"
-
                 if archive:
-                    commands.append("archive rm -rf {} || true".format(self.archive_dir))
+                    path = await self.get_archive_dir()
+                    cmd = f"archive rm -rf {path} || true"
+                    tg.create_task(self.client.call(command=cmd, working_dir="/"))
                     self.set_archived_status(False)
                 else:
                     for path in (self.working_dir, self.home_dir):
-                        cmd = rm_cmd.format(path)
+                        cmd = f"rm -rf {path} || true"
                         tg.create_task(self.client.call(command=cmd, working_dir="/"))
                         log.info(f"Executing command '{cmd}' on {self.system}")
         return True
