@@ -547,7 +547,6 @@ class UitPlusJob(PbsScript, TethysJob):
         await self.execute(*args, **kwargs)
 
     # duplicate from Tethys to make it async
-    @_ensure_connected
     async def update_status(self, status=None, *args, **kwargs):
         """
         Updates the status of a job. If ``status`` is passed then it will manually update the status. Otherwise,
@@ -593,6 +592,7 @@ class UitPlusJob(PbsScript, TethysJob):
 
         await self._safe_save()
 
+    @_ensure_connected
     async def _update_status(self):
         """Retrieve a job’s status using the UIT Plus Python client.
 
