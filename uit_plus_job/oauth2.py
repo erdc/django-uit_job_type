@@ -23,9 +23,7 @@ class UitPlusOAuth2(BaseOAuth2):
 
     http_scheme = "https"
     auth_server_hostname = "www.uitplus.hpc.mil"
-    auth_server_full_url = "{}://{}".format(
-        http_scheme, auth_server_hostname
-    )  # noqa: E222
+    auth_server_full_url = "{}://{}".format(http_scheme, auth_server_hostname)  # noqa: E222
     AUTHORIZATION_URL = "{}/uapi/authorize".format(auth_server_full_url)  # noqa: E222
     ACCESS_TOKEN_URL = "{}/uapi/token".format(auth_server_full_url)  # noqa: E222
     USER_DATA_URL = "{}/uapi/userinfo".format(auth_server_full_url)  # noqa: E222
@@ -46,9 +44,7 @@ class UitPlusOAuth2(BaseOAuth2):
 
     def extra_data(self, user, uid, response, details=None, *args, **kwargs):
         # convert date string to timestamp
-        expires_time = datetime.fromisoformat(
-            response["access_token_expires_on"].replace("Z", "")
-        )
+        expires_time = datetime.fromisoformat(response["access_token_expires_on"].replace("Z", ""))
         response["access_token_expires_on"] = datetime.timestamp(expires_time)
         return super().extra_data(user, uid, response, details, *args, **kwargs)
 
@@ -76,9 +72,7 @@ class UitPlusOAuth2(BaseOAuth2):
 
         try:
             # Get the user data from user data endpoint
-            user_data = self.get_json(
-                self.USER_DATA_URL, headers={"x-uit-auth-token": access_token}
-            )
+            user_data = self.get_json(self.USER_DATA_URL, headers={"x-uit-auth-token": access_token})
 
             # Pull out the user info
             user_data = user_data.get("userinfo", {})

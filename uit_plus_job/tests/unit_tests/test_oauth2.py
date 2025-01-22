@@ -36,9 +36,7 @@ class UitPlusOAuth2Tests(unittest.TestCase):
         self.assertIn(("SYSTEMS", "systems"), self.auth.EXTRA_DATA)
         self.assertIn(("access_token_expires_on", "expires_in"), self.auth.EXTRA_DATA)
         self.assertIn(("refresh_token", "refresh_token"), self.auth.EXTRA_DATA)
-        self.assertIn(
-            ("refresh_token_expires_on", "refresh_expires_in"), self.auth.EXTRA_DATA
-        )
+        self.assertIn(("refresh_token_expires_on", "refresh_expires_in"), self.auth.EXTRA_DATA)
 
     def test_get_user_details_with_hpc_username(self):
         hpc_username = "foo@bar.com"
@@ -63,9 +61,7 @@ class UitPlusOAuth2Tests(unittest.TestCase):
 
         ret = self.auth.user_data(mock_token, response=mock_response)
 
-        self.auth.get_json.assert_called_with(
-            self.auth.USER_DATA_URL, headers={"x-uit-auth-token": mock_token}
-        )
+        self.auth.get_json.assert_called_with(self.auth.USER_DATA_URL, headers={"x-uit-auth-token": mock_token})
         self.assertEqual(2, len(ret))
         self.assertIn("USERNAME", ret)
         self.assertEqual("fake@mail.com", ret["USERNAME"])
@@ -80,9 +76,7 @@ class UitPlusOAuth2Tests(unittest.TestCase):
 
         ret = self.auth.user_data(mock_token)
 
-        self.auth.get_json.assert_called_with(
-            self.auth.USER_DATA_URL, headers={"x-uit-auth-token": mock_token}
-        )
+        self.auth.get_json.assert_called_with(self.auth.USER_DATA_URL, headers={"x-uit-auth-token": mock_token})
         self.assertEqual(1, len(ret))
         self.assertIn("USERNAME", ret)
         self.assertEqual("fake@mail.com", ret["USERNAME"])
@@ -95,9 +89,7 @@ class UitPlusOAuth2Tests(unittest.TestCase):
 
         ret = self.auth.user_data(mock_token, response=mock_response)
 
-        self.auth.get_json.assert_called_with(
-            self.auth.USER_DATA_URL, headers={"x-uit-auth-token": mock_token}
-        )
+        self.auth.get_json.assert_called_with(self.auth.USER_DATA_URL, headers={"x-uit-auth-token": mock_token})
         self.assertEqual(1, len(ret))
         self.assertIn("foo", ret)
         self.assertEqual("bar", ret["foo"])
@@ -111,7 +103,5 @@ class UitPlusOAuth2Tests(unittest.TestCase):
 
         ret = self.auth.user_data(mock_token, response=mock_response)
 
-        self.auth.get_json.assert_called_with(
-            self.auth.USER_DATA_URL, headers={"x-uit-auth-token": mock_token}
-        )
+        self.auth.get_json.assert_called_with(self.auth.USER_DATA_URL, headers={"x-uit-auth-token": mock_token})
         self.assertEqual(mock_response, ret)

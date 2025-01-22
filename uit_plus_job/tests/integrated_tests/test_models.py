@@ -17,9 +17,7 @@ class TestUitPlusJob(TransactionTestCase):
 
         self.user = User.objects.create_user("tethys1", "user@example.com", "pass")
 
-        self.social_auth = UserSocialAuth.create_social_auth(
-            self.user, "username", "UITPlus"
-        )
+        self.social_auth = UserSocialAuth.create_social_auth(self.user, "username", "UITPlus")
 
         self.uitplusjob = UitPlusJob(
             name="uit_job",
@@ -257,24 +255,16 @@ class TestUitPlusJob(TransactionTestCase):
 
         # testing the client call input arguments
         call_args = mock_client.call.call_args_list
-        self.assertIn(
-            "mkdir -p {WORKDIR}/test_label/uit_job", call_args[0][1]["command"]
-        )
+        self.assertIn("mkdir -p {WORKDIR}/test_label/uit_job", call_args[0][1]["command"])
         self.assertIn("/tmp", call_args[0][1]["work_dir"])
 
         put_call_args = mock_client.put_file.call_args_list
         self.assertEqual("file1.xml", put_call_args[0][1]["local_path"])
-        self.assertIn(
-            "{WORKDIR}/test_label/uit_job", put_call_args[0][1]["remote_path"]
-        )
+        self.assertIn("{WORKDIR}/test_label/uit_job", put_call_args[0][1]["remote_path"])
         self.assertEqual("file10.xml", put_call_args[1][1]["local_path"])
-        self.assertIn(
-            "{WORKDIR}/test_label/uit_job", put_call_args[1][1]["remote_path"]
-        )
+        self.assertIn("{WORKDIR}/test_label/uit_job", put_call_args[1][1]["remote_path"])
         self.assertEqual("PBSScript", put_call_args[2][1]["local_path"])
-        self.assertIn(
-            "{WORKDIR}/test_label/uit_job", put_call_args[2][1]["remote_path"]
-        )
+        self.assertIn("{WORKDIR}/test_label/uit_job", put_call_args[2][1]["remote_path"])
 
         submit_call_args = mock_client.submit.call_args_list
         self.assertIsInstance(submit_call_args[0][0][0], UitPlusJob)
@@ -297,9 +287,7 @@ class TestUitPlusJob(TransactionTestCase):
     @mock.patch("uit_plus_job.models.UitPlusJob.get_environment_variable")
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
     @mock.patch("django.db.models.base.Model.save")
-    def test_execute_transfer_input_file_runtime_error(
-        self, mock_save, mock_client, mock_env
-    ):
+    def test_execute_transfer_input_file_runtime_error(self, mock_save, mock_client, mock_env):
         mock_env.return_value = "{WORKDIR}"
         mock_client.put_file.return_value = {"success": "false", "error": "test error"}
 
@@ -309,17 +297,13 @@ class TestUitPlusJob(TransactionTestCase):
 
         # testing the client call input arguments
         call_args = mock_client.call.call_args_list
-        self.assertIn(
-            "mkdir -p {WORKDIR}/test_label/uit_job", call_args[0][1]["command"]
-        )
+        self.assertIn("mkdir -p {WORKDIR}/test_label/uit_job", call_args[0][1]["command"])
         self.assertIn("/tmp", call_args[0][1]["work_dir"])
 
     @mock.patch("uit_plus_job.models.UitPlusJob.get_environment_variable")
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
     @mock.patch("django.db.models.base.Model.save")
-    def test_execute_transfer_script_runtime_error(
-        self, mock_save, mock_client, mock_env
-    ):
+    def test_execute_transfer_script_runtime_error(self, mock_save, mock_client, mock_env):
         mock_env.return_value = "{WORKDIR}"
         mock_client.put_file.side_effect = [
             {"success": "true"},
@@ -332,9 +316,7 @@ class TestUitPlusJob(TransactionTestCase):
 
         # testing the client call input arguments
         call_args = mock_client.call.call_args_list
-        self.assertIn(
-            "mkdir -p {WORKDIR}/test_label/uit_job", call_args[0][1]["command"]
-        )
+        self.assertIn("mkdir -p {WORKDIR}/test_label/uit_job", call_args[0][1]["command"])
         self.assertIn("/tmp", call_args[0][1]["work_dir"])
 
     def test_parse_status(self):
@@ -361,11 +343,7 @@ class TestUitPlusJob(TransactionTestCase):
         remote_files_names = ["file1.xml"]
         remote_dir = "WORKDIR"
         mock_client.get_file.return_value = {"success": True}
-        self.assertFalse(
-            self.uitplusjob.get_remote_files(
-                remote_dir=remote_dir, remote_filenames=remote_files_names
-            )
-        )
+        self.assertFalse(self.uitplusjob.get_remote_files(remote_dir=remote_dir, remote_filenames=remote_files_names))
 
     @mock.patch("uit_plus_job.models.log")
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
@@ -375,15 +353,11 @@ class TestUitPlusJob(TransactionTestCase):
         mock_client.get_file.side_effect = IOError
 
         # call the method
-        ret = self.uitplusjob.get_remote_files(
-            remote_dir=remote_dir, remote_filenames=remote_files_names
-        )
+        ret = self.uitplusjob.get_remote_files(remote_dir=remote_dir, remote_filenames=remote_files_names)
 
         # test results
         self.assertFalse(ret)
-        self.assertEqual(
-            "Failed to get remote file: ", mock_log.error.call_args_list[0][0][0]
-        )
+        self.assertEqual("Failed to get remote file: ", mock_log.error.call_args_list[0][0][0])
 
     @mock.patch("uit_plus_job.models.os")
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
@@ -393,9 +367,7 @@ class TestUitPlusJob(TransactionTestCase):
         mock_os.path.join.side_effect = ["local_path", "remote_path"]
         mock_client.get_file.return_value = {"success": True}
         mock_os.path.exists.return_value = True
-        ret = self.uitplusjob.get_remote_files(
-            remote_dir=remote_dir, remote_filenames=remote_files_names
-        )
+        ret = self.uitplusjob.get_remote_files(remote_dir=remote_dir, remote_filenames=remote_files_names)
 
         # test results
         self.assertTrue(ret)
@@ -410,9 +382,7 @@ class TestUitPlusJob(TransactionTestCase):
 
         # test results
         call_args = mock_client.call.call_args_list
-        self.assertDictEqual(
-            {"command": "echo $WORKDIR", "work_dir": "/tmp"}, call_args[0][1]
-        )
+        self.assertDictEqual({"command": "echo $WORKDIR", "work_dir": "/tmp"}, call_args[0][1])
         self.assertEqual("qdel J0001", call_args[1][1]["command"])
 
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
@@ -424,9 +394,7 @@ class TestUitPlusJob(TransactionTestCase):
 
         # test results
         call_args = mock_client.call.call_args_list
-        self.assertDictEqual(
-            {"command": "echo $WORKDIR", "work_dir": "/tmp"}, call_args[0][1]
-        )
+        self.assertDictEqual({"command": "echo $WORKDIR", "work_dir": "/tmp"}, call_args[0][1])
 
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
     def test_pause(self, mock_client):
@@ -435,9 +403,7 @@ class TestUitPlusJob(TransactionTestCase):
 
         # test results
         call_args = mock_client.call.call_args_list
-        self.assertDictEqual(
-            {"command": "echo $WORKDIR", "work_dir": "/tmp"}, call_args[0][1]
-        )
+        self.assertDictEqual({"command": "echo $WORKDIR", "work_dir": "/tmp"}, call_args[0][1])
         self.assertEqual("qhold J0001", call_args[1][1]["command"])
 
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
@@ -449,9 +415,7 @@ class TestUitPlusJob(TransactionTestCase):
 
         # test results
         call_args = mock_client.call.call_args_list
-        self.assertDictEqual(
-            {"command": "echo $WORKDIR", "work_dir": "/tmp"}, call_args[0][1]
-        )
+        self.assertDictEqual({"command": "echo $WORKDIR", "work_dir": "/tmp"}, call_args[0][1])
 
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
     def test_resume(self, mock_client):
@@ -461,9 +425,7 @@ class TestUitPlusJob(TransactionTestCase):
         # test results
         call_args = mock_client.call.call_args_list
 
-        self.assertDictEqual(
-            {"command": "echo $WORKDIR", "work_dir": "/tmp"}, call_args[0][1]
-        )
+        self.assertDictEqual({"command": "echo $WORKDIR", "work_dir": "/tmp"}, call_args[0][1])
         self.assertEqual("qrls J0001", call_args[1][1]["command"])
 
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
@@ -476,9 +438,7 @@ class TestUitPlusJob(TransactionTestCase):
         # test results
         call_args = mock_client.call.call_args_list
 
-        self.assertDictEqual(
-            {"work_dir": "/tmp", "command": "echo $WORKDIR"}, call_args[0][1]
-        )
+        self.assertDictEqual({"work_dir": "/tmp", "command": "echo $WORKDIR"}, call_args[0][1])
 
     @mock.patch("uit_plus_job.models.UitPlusJob.render_clean_script")
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
@@ -522,9 +482,7 @@ class TestUitPlusJob(TransactionTestCase):
 
         # test results
         call_args = mock_remote_files.call_args_list
-        self.assertListEqual(
-            ["transfer_out.out", "transfer_out2.out"], call_args[0][0][1]
-        )
+        self.assertListEqual(["transfer_out.out", "transfer_out2.out"], call_args[0][0][1])
         self.assertListEqual(["log.stdout", "log.stderr"], call_args[1][0][1])
 
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
@@ -570,9 +528,7 @@ class TestUitPlusJob(TransactionTestCase):
 
         # test results
         call_args = mock_client.call.call_args_list
-        self.assertDictEqual(
-            {"work_dir": "/tmp", "command": "qstat -H J0001"}, call_args[0][1]
-        )
+        self.assertDictEqual({"work_dir": "/tmp", "command": "qstat -H J0001"}, call_args[0][1])
 
         self.assertEqual(
             "Attempt to get status for job %s failed: %s",
@@ -590,16 +546,12 @@ class TestUitPlusJob(TransactionTestCase):
 
         # test results
         call_args = mock_client.call.call_args_list
-        self.assertDictEqual(
-            {"command": "qstat -H J0001", "work_dir": "/tmp"}, call_args[0][1]
-        )
+        self.assertDictEqual({"command": "qstat -H J0001", "work_dir": "/tmp"}, call_args[0][1])
 
         self.assertEqual("qstat -H J0001", call_args[0][1]["command"])
         self.assertEqual("/tmp", call_args[0][1]["work_dir"])
 
-        self.assertEqual(
-            "Ignoring DP_Route error: DP_Route_Error", mock_logging.info.call_args[0][0]
-        )
+        self.assertEqual("Ignoring DP_Route error: DP_Route_Error", mock_logging.info.call_args[0][0])
 
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
     @mock.patch("django.db.models.base.Model.save")
