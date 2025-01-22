@@ -204,6 +204,13 @@ class UitPlusJob(PbsScript, TethysJob):
 
         return wrapper
 
+    @_ensure_connected
+    async def connect(self):
+        """
+        A no-op method to allow the _ensure_connected decorator to be triggered manually.
+        """
+        pass
+
     @database_sync_to_async
     def _safe_save(self):
         self.save()
