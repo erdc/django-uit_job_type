@@ -497,7 +497,7 @@ class UitPlusJob(PbsScript, TethysJob):
         except UITError as e:
             if "allocation" in str(e):
                 self.status_message = (
-                    "Submission failed because subproject allocation has expired or there are " "insufficient hours."
+                    "Submission failed because subproject allocation has expired or there are insufficient hours."
                 )
             else:
                 self.status_message = str(e)
@@ -580,7 +580,7 @@ class UitPlusJob(PbsScript, TethysJob):
             if "qstat: Unknown Job Id" in str(e):
                 status = "F"
                 self.status_message = (
-                    f"Job ID was not found on {self.client.system}. " f"Unable to get status information."
+                    f"Job ID was not found on {self.client.system}. Unable to get status information."
                 )
             else:
                 raise e
