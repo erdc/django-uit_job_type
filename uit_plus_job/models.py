@@ -579,9 +579,7 @@ class UitPlusJob(PbsScript, TethysJob):
         except UITError as e:
             if "qstat: Unknown Job Id" in str(e):
                 status = "F"
-                self.status_message = (
-                    f"Job ID was not found on {self.client.system}. Unable to get status information."
-                )
+                self.status_message = f"Job ID was not found on {self.client.system}. Unable to get status information."
             else:
                 raise e
         new_status = self.UIT_TO_TETHYS_STATUSES.get(status, "ERR")
