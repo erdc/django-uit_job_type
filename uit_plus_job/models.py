@@ -81,9 +81,7 @@ class UitPlusJob(PbsScript, TethysJob):
 
     SYSTEM_CHOICES = [(s, s) for s in sorted(NODE_TYPES.keys())]
 
-    NODE_TYPE_CHOICES = [
-        (nt, nt) for nt in sorted({nt for s in NODE_TYPES.values() for nt in s.keys()})
-    ]
+    NODE_TYPE_CHOICES = [(nt, nt) for nt in sorted({nt for s in NODE_TYPES.values() for nt in s.keys()})]
 
     # job vars
     job_id = models.CharField(max_length=1024, null=True)
@@ -101,12 +99,8 @@ class UitPlusJob(PbsScript, TethysJob):
     processes_per_node = models.IntegerField(default=1, null=False)
     _max_time = models.DurationField(null=False)
     queue = models.CharField(max_length=100, default="debug", null=False)
-    node_type = models.CharField(
-        max_length=10, choices=NODE_TYPE_CHOICES, default="compute", null=False
-    )
-    system = models.CharField(
-        max_length=10, choices=SYSTEM_CHOICES, default="onyx", null=False
-    )
+    node_type = models.CharField(max_length=10, choices=NODE_TYPE_CHOICES, default="compute", null=False)
+    system = models.CharField(max_length=10, choices=SYSTEM_CHOICES, default="onyx", null=False)
     execution_block = models.TextField(null=False)
     _modules = JSONField(default=dict, null=True)
     _module_use = JSONField(default=dict, null=True)
@@ -124,12 +118,8 @@ class UitPlusJob(PbsScript, TethysJob):
     transfer_job_script = models.BooleanField(default=True)
     transfer_output_files = JSONField(blank=True, default=list, null=True)
     custom_logs = JSONField(default=dict, null=False)
-    _process_intermediate_results_function = models.CharField(
-        max_length=1024, null=True
-    )
-    _update_status_interval = dt.timedelta(
-        seconds=30
-    )  # This is not effective until jobs table uses WS
+    _process_intermediate_results_function = models.CharField(max_length=1024, null=True)
+    _update_status_interval = dt.timedelta(seconds=30)  # This is not effective until jobs table uses WS
 
     def __init__(self, *args, **kwargs):
         """Constructor."""
@@ -151,9 +141,7 @@ class UitPlusJob(PbsScript, TethysJob):
         # When a Django model loads objects from the database, it passes in args, not kwargs
         if len(args) + 1 == len(upj_fields):
             # Get list of field names in the order Django passes them in
-            all_field_names = [
-                field.name for field in upj_fields if field.name != "tethysjob_ptr"
-            ]
+            all_field_names = [field.name for field in upj_fields if field.name != "tethysjob_ptr"]
             all_field_names[all_field_names.index("_max_time")] = "max_time"
             # Match up given arg values with field names
             for field_name, value in zip(all_field_names, args):
@@ -203,6 +191,13 @@ class UitPlusJob(PbsScript, TethysJob):
             return await func(self, *args, **kwargs)
 
         return wrapper
+
+    @_ensure_connected
+    async def connect(self):
+        """
+        A no-op method to allow the _ensure_connected decorator to be triggered manually.
+        """
+        pass
 
     @database_sync_to_async
     def _safe_save(self):
@@ -268,9 +263,7 @@ class UitPlusJob(PbsScript, TethysJob):
     @property
     def pbs_job(self):
         if self._system_decommissioned:
-            raise RuntimeError(
-                "The PBS Job is not available on jobs from systems that have been decommissioned."
-            )
+            raise RuntimeError("The PBS Job is not available on jobs from systems that have been decommissioned.")
         if self._pbs_job is None:
             Job = PbsJob if not self._array_indices else PbsArrayJob
             j = Job(
@@ -289,9 +282,7 @@ class UitPlusJob(PbsScript, TethysJob):
             j._job_id = self.job_id
             j._status = self.TETHYS_STATUSES_TO_UIT.get(self._status)
             j._qstat = self.qstat
-            j._post_processing_job_id = self.extended_properties.get(
-                "post_processing_job_id"
-            )
+            j._post_processing_job_id = self.extended_properties.get("post_processing_job_id")
             if self._array_indices and self.qstat is not None:
                 for sub_job in j.sub_jobs:
                     sub_job._qstat = self.qstat.get(sub_job.job_id)
@@ -322,9 +313,7 @@ class UitPlusJob(PbsScript, TethysJob):
             return PbsDirective(*directive_str)
         if isinstance(directive_str, PbsDirective):
             return directive_str
-        m = re.match(
-            r"PbsDirective\(directive='(.*?)', options='(.*?)'\)", directive_str
-        )
+        m = re.match(r"PbsDirective\(directive='(.*?)', options='(.*?)'\)", directive_str)
         return PbsDirective(*m.groups())
 
     @property
@@ -336,9 +325,7 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         if self._archive_dir is None:
             archive_home = self.get_environment_variable("ARCHIVE_HOME")
-            self._archive_dir = posixpath.join(
-                archive_home, self.remote_workspace_suffix
-            )
+            self._archive_dir = posixpath.join(archive_home, self.remote_workspace_suffix)
         return self._archive_dir
 
     @property
@@ -381,9 +368,7 @@ class UitPlusJob(PbsScript, TethysJob):
             Function: The process function, or None if the function cannot be resolved.
         """
         if self._process_intermediate_results_function:
-            function_extractor = TethysFunctionExtractor(
-                self._process_intermediate_results_function, None
-            )
+            function_extractor = TethysFunctionExtractor(self._process_intermediate_results_function, None)
             if function_extractor.valid:
                 return function_extractor.function
 
@@ -436,9 +421,7 @@ class UitPlusJob(PbsScript, TethysJob):
             str: Access Token
         """
         if self._token is None:
-            raise RuntimeError(
-                'The "get_token" method must be awaited before retreiving the token.'
-            )
+            raise RuntimeError('The "get_token" method must be awaited before retreiving the token.')
         return self._token
 
     @property
@@ -466,9 +449,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 logs[name]["stderr"] = sub_job.get_stderr_log
                 logs[name].update(
                     {
-                        log_type: partial(
-                            sub_job.get_cached_file_contents, path, bytes=100_000
-                        )
+                        log_type: partial(sub_job.get_cached_file_contents, path, bytes=100_000)
                         for log_type, path in self.custom_logs.items()
                     }
                 )
@@ -478,9 +459,7 @@ class UitPlusJob(PbsScript, TethysJob):
             "stdout": self.pbs_job.get_stdout_log,
             "stderr": self.pbs_job.get_stderr_log,
             **{
-                log_type: partial(
-                    self.pbs_job.get_cached_file_contents, path, bytes=100_000
-                )
+                log_type: partial(self.pbs_job.get_cached_file_contents, path, bytes=100_000)
                 for log_type, path in self.custom_logs.items()
             },
         }
@@ -514,14 +493,11 @@ class UitPlusJob(PbsScript, TethysJob):
         try:
             # Submit job with PbsScript object and remote workspace
             self.job_id = await self.pbs_job.submit(remote_name=remote_name)
-            self.extended_properties["post_processing_job_id"] = (
-                self.pbs_job.post_processing_job_id
-            )
+            self.extended_properties["post_processing_job_id"] = self.pbs_job.post_processing_job_id
         except UITError as e:
             if "allocation" in str(e):
                 self.status_message = (
-                    "Submission failed because subproject allocation has expired or there are "
-                    "insufficient hours."
+                    "Submission failed because subproject allocation has expired or there are insufficient hours."
                 )
             else:
                 self.status_message = str(e)
@@ -603,10 +579,7 @@ class UitPlusJob(PbsScript, TethysJob):
         except UITError as e:
             if "qstat: Unknown Job Id" in str(e):
                 status = "F"
-                self.status_message = (
-                    f"Job ID was not found on {self.client.system}. "
-                    f"Unable to get status information."
-                )
+                self.status_message = f"Job ID was not found on {self.client.system}. Unable to get status information."
             else:
                 raise e
         new_status = self.UIT_TO_TETHYS_STATUSES.get(status, "ERR")
@@ -626,9 +599,7 @@ class UitPlusJob(PbsScript, TethysJob):
         # Get intermediate results, if applicable
         if self.transfer_intermediate_files:
             if self.intermediate_transfer_interval_exceeded:
-                self.last_intermediate_transfer = (
-                    timezone.now()
-                )  # move this to get_intermediate_results
+                self.last_intermediate_transfer = timezone.now()  # move this to get_intermediate_results
                 thread = threading.Thread(target=self.get_intermediate_results)
                 thread.daemon = True
                 thread.start()
@@ -773,15 +744,15 @@ class UitPlusJob(PbsScript, TethysJob):
                 tg.create_task(asyncio.to_thread(shutil.rmtree, self.workspace, True))
 
             if remote:
-                # Remove remote locations
-                rm_cmd = "rm -rf {} || true"
-
                 if archive:
-                    commands.append("archive rm -rf {} || true".format(self.archive_dir))
+                    cmd = f"archive rm -rf {self.archive_dir} || true"
+                    tg.create_task(self.client.call(command=cmd, working_dir="/"))
                     self.set_archived_status(False)
+                    log.info(f"Executing command '{cmd}' on {self.system}")
                 else:
+                    # Remove remote locations
                     for path in (self.working_dir, self.home_dir):
-                        cmd = rm_cmd.format(path)
+                        cmd = f"rm -rf {path} || true"
                         tg.create_task(self.client.call(command=cmd, working_dir="/"))
                         log.info(f"Executing command '{cmd}' on {self.system}")
         return True
@@ -854,12 +825,8 @@ class UitPlusJob(PbsScript, TethysJob):
             {
                 "archived_job_id": self.job_id,
                 "archived_to": archive_name,
-                "archived_job_script": {
-                    attr: getattr(self, attr) for attr in save_script_attrs
-                },
-                "archived_job_attrs": {
-                    attr: getattr(self, attr) for attr in save_job_attrs
-                },
+                "archived_job_script": {attr: getattr(self, attr) for attr in save_script_attrs},
+                "archived_job_attrs": {attr: getattr(self, attr) for attr in save_job_attrs},
             }
         )
         # Add max_time
@@ -904,9 +871,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 array_indices = script_kwargs.pop("_array_indices")
                 script_kwargs["max_time"] = dt.timedelta(**script_kwargs["max_time"])
                 # Setup PbsScript
-                restored_job_script = PbsScript(
-                    **script_kwargs, array_indices=array_indices
-                )
+                restored_job_script = PbsScript(**script_kwargs, array_indices=array_indices)
 
                 Job = PbsJob if array_indices is None else PbsArrayJob
                 job_kwargs = self.extended_properties["archived_job_attrs"]
@@ -957,9 +922,7 @@ class EnvironmentProfile(models.Model):
 
         """
         # Find current default for version
-        ver_default = cls._get_default_for_version(
-            usr, profile.hpc_system, profile.software, version
-        )
+        ver_default = cls._get_default_for_version(usr, profile.hpc_system, profile.software, version)
         if ver_default:
             # Remove version from its list of defaults
             ver_default.default_for_versions.remove(version)
@@ -982,9 +945,7 @@ class EnvironmentProfile(models.Model):
 
         """
         # Get current default
-        old_default = cls._get_general_default(
-            usr, profile.hpc_system, profile.software
-        )
+        old_default = cls._get_general_default(usr, profile.hpc_system, profile.software)
         if old_default:
             # Remove the old default as general default
             old_default.user_default = False
@@ -997,9 +958,7 @@ class EnvironmentProfile(models.Model):
         profile.save()
 
     @classmethod
-    def get_default(
-        cls, usr, hpc_system, software, version=None, use_general_default=True
-    ):
+    def get_default(cls, usr, hpc_system, software, version=None, use_general_default=True):
         """Get the default for this version. Return the general default if it doesn't exist.
 
         Args:
@@ -1033,9 +992,9 @@ class EnvironmentProfile(models.Model):
         Returns:
 
         """
-        profiles = cls.objects.filter(
-            user=usr, hpc_system=hpc_system, software=software
-        ).exclude(default_for_versions=[])
+        profiles = cls.objects.filter(user=usr, hpc_system=hpc_system, software=software).exclude(
+            default_for_versions=[]
+        )
         for profile in profiles:
             if version in profile.default_for_versions:
                 return profile
@@ -1053,15 +1012,11 @@ class EnvironmentProfile(models.Model):
 
         """
         try:
-            profiles = cls.objects.get(
-                user=usr, hpc_system=hpc_system, software=software, user_default=True
-            )
+            profiles = cls.objects.get(user=usr, hpc_system=hpc_system, software=software, user_default=True)
         except cls.DoesNotExist:
             return None
         except cls.MultipleObjectsReturned:
-            return cls.objects.filter(
-                user=usr, hpc_system=hpc_system, software=software, user_default=True
-            )[0]
+            return cls.objects.filter(user=usr, hpc_system=hpc_system, software=software, user_default=True)[0]
 
         return profiles
 
