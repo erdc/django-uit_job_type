@@ -27,9 +27,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     version = param.Selector(label="Set Version Default", precedence=1)
     show_save_panel = param.Boolean()
     show_delete_panel = param.Boolean()
-    delete_profile_btn = param.Action(
-        lambda self: self.update_delete_panel(True), label="Delete Selected Profile"
-    )
+    delete_profile_btn = param.Action(lambda self: self.update_delete_panel(True), label="Delete Selected Profile")
     software = param.String()
     notification_email = param.String(label="Notification E-mail")
     selected_version = param.String()
@@ -48,20 +46,14 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     version_environment_variable = "VERSION"
 
     def __init__(self, *args, **kwargs):
-        self.revert_btn = pn.widgets.Button(
-            name="Revert", button_type="primary", width=100
-        )
+        self.revert_btn = pn.widgets.Button(name="Revert", button_type="primary", width=100)
         self.revert_btn.on_click(self.revert)
         self.overwrite_request = None
         self.cb = None
         self.count = 0
-        self.progress_bar = pn.widgets.misc.Progress(
-            width=250, active=False, visible=False
-        )
+        self.progress_bar = pn.widgets.misc.Progress(width=250, active=False, visible=False)
         self.alert = pn.pane.Alert(visible=False)
-        self.close_alert_button = pn.widgets.Button(
-            name="X", button_type="danger", margin=25, width=50, visible=False
-        )
+        self.close_alert_button = pn.widgets.Button(name="X", button_type="danger", margin=25, width=50, visible=False)
         self.revert_btn.on_click(self.revert)
         self.profile_panel = pn.Column()
         self.no_version_profiles_alert = pn.pane.Alert(
@@ -114,12 +106,8 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         self.revert_btn.disabled = False
 
     def load_profile_column(self):
-        load_type = pn.widgets.RadioButtonGroup.from_param(
-            self.param.load_type, width=300
-        )
-        environment_profile = pn.widgets.Select.from_param(
-            self.param.environment_profile, width=300, visible=True
-        )
+        load_type = pn.widgets.RadioButtonGroup.from_param(self.param.load_type, width=300)
+        environment_profile = pn.widgets.Select.from_param(self.param.environment_profile, width=300, visible=True)
         pbs_script_type = pn.widgets.RadioButtonGroup(
             options=["Upload Local Script", "Select Script on HPC"],
             width=300,
@@ -132,9 +120,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             help_text="Load environment from a PBS file",
         )
         select_pbs.param.watch(self._parse_remote_pbs, "file_path")
-        select_pbs.file_browser = HpcFileBrowser(
-            self.uit_client, delayed_init=False, patterns=["*.pbs", "*.sh"]
-        )
+        select_pbs.file_browser = HpcFileBrowser(self.uit_client, delayed_init=False, patterns=["*.pbs", "*.sh"])
         select_pbs.show_browser = True
         fbp = select_pbs.panel
         fbp.visible = False
@@ -193,9 +179,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             software=self.software,
         )
         if version is not None:
-            kwargs["environment_variables__contains"] = (
-                f'"{self.version_environment_variable}": "{version}"'
-            )
+            kwargs["environment_variables__contains"] = f'"{self.version_environment_variable}": "{version}"'
 
         return sorted([p.name for p in EnvironmentProfile.objects.filter(**kwargs)])
 
@@ -229,9 +213,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     async def update_version_profiles(self):
         version = None if self.version == "System Default" else self.version
         profiles = await self.get_profiles(version=version)
-        version_default = await self.get_default_profile(
-            version=self.version, use_general_default=version is None
-        )
+        version_default = await self.get_default_profile(version=self.version, use_general_default=version is None)
 
         self.param.environment_profile_version.objects = profiles
         if version_default:
@@ -239,7 +221,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             trigger = self.environment_profile_version == version_default.name
             self.environment_profile_version = version_default.name
             if trigger:  # always trigger event even if value doesn't change
-                self.param.trigger('environment_profile_version')
+                self.param.trigger("environment_profile_version")
         if profiles:
             self.param.environment_profile_version.precedence = 2
             self.no_version_profiles_alert.visible = False
@@ -248,11 +230,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             self.no_version_profiles_alert.visible = True
 
     def update_save_panel(self, e):
-        self.save_name = (
-            self.environment_profile
-            if self.load_type == self.param.load_type.objects[1]
-            else ""
-        )
+        self.save_name = self.environment_profile if self.load_type == self.param.load_type.objects[1] else ""
         self.show_save_panel = True
 
     def update_delete_panel(self, should_show):
@@ -282,9 +260,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         if self.version == "System Default":
             EnvironmentProfile.set_general_default(self.tethys_user, profile)
         else:
-            EnvironmentProfile.set_default_for_version(
-                self.tethys_user, profile, self.version
-            )
+            EnvironmentProfile.set_default_for_version(self.tethys_user, profile, self.version)
 
     @param.depends("environment_profile_version", watch=True)
     async def set_default(self):
@@ -293,9 +269,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             return
         profile = await self.get_profile(name=self.environment_profile_version)
         await self._set_profile_default(profile)
-        self._alert(
-            f"Default profile for version {self.version} is now set to {self.environment_profile_version}"
-        )
+        self._alert(f"Default profile for version {self.version} is now set to {self.environment_profile_version}")
         self.update_version_profiles()
 
     @param.depends("environment_profile", watch=True)
@@ -343,9 +317,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             profiles = [saving_profile.name]
 
         self.profiles = profiles
-        self.param.environment_profile.objects = (
-            self.param.environment_profile_delete.objects
-        ) = self.profiles
+        self.param.environment_profile.objects = self.param.environment_profile_delete.objects = self.profiles
         for attr in ["environment_profile", "environment_profile_delete"]:
             if getattr(self, attr) not in self.profiles:
                 setattr(self, attr, self.profiles[0])
@@ -357,9 +329,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         del_profile = await self.get_profile(name=self.environment_profile_delete)
 
         await self._delete_profile(del_profile)
-        self._alert(
-            "Removed {}".format(self.environment_profile_delete), alert_type="danger"
-        )
+        self._alert("Removed {}".format(self.environment_profile_delete), alert_type="danger")
 
         await self._load_profiles()
         self.revert()
@@ -386,10 +356,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             self.param.trigger("show_save_panel")
             return
 
-        if (
-            self.overwrite_request not in (1, None)
-            and self.overwrite_request.name == self.save_name
-        ):
+        if self.overwrite_request not in (1, None) and self.overwrite_request.name == self.save_name:
             saving_profile = self.overwrite_request
             saving_profile.modules = modules
             saving_profile.environment_variables = env_var_json
@@ -505,9 +472,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             if "walltime" in match:
                 d["walltime"] = match.split("=")[1]
             else:
-                d.update(
-                    {k: v for k, v in [i.split("=") for i in l_matches[0].split(":")]}
-                )
+                d.update({k: v for k, v in [i.split("=") for i in l_matches[0].split(":")]})
 
         directives["l"] = d
         return directives
@@ -525,9 +490,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         modules = profile.modules
         self.modules_to_load = modules["modules_to_load"]
         self.modules_to_unload = modules["modules_to_unload"]
-        self.environment_variables = OrderedDict(
-            json.loads(profile.environment_variables)
-        )
+        self.environment_variables = OrderedDict(json.loads(profile.environment_variables))
         self.notification_email = profile.email or ""
         self.reset_loading()
 
@@ -544,9 +507,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
     def _populate_from_pbs(self):
         parsed_pbs = self._parse_pbs_body()
-        self.modules_to_load = self._validate_modules(
-            self.param.modules_to_load.objects, parsed_pbs["modules_to_load"]
-        )
+        self.modules_to_load = self._validate_modules(self.param.modules_to_load.objects, parsed_pbs["modules_to_load"])
         self.modules_to_unload = self._validate_modules(
             self.param.modules_to_unload.objects, parsed_pbs["modules_to_unload"]
         )
@@ -585,13 +546,9 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
     @param.depends("show_delete_panel")
     def delete_panel(self):
         if self.show_delete_panel:
-            delete_btn = pn.widgets.Button(
-                name="Delete", button_type="danger", width=100
-            )
+            delete_btn = pn.widgets.Button(name="Delete", button_type="danger", width=100)
             delete_btn.on_click(self._delete_selected_profile)
-            cancel_btn = pn.widgets.Button(
-                name="Cancel", button_type="primary", width=100
-            )
+            cancel_btn = pn.widgets.Button(name="Cancel", button_type="primary", width=100)
             cancel_btn.on_click(lambda e: self.update_delete_panel(False))
 
             code = f"o.disabled=true; {get_js_loading_code('btn')}"
@@ -608,25 +565,19 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
                 pn.Row(delete_btn, cancel_btn, align="end"),
             )
         else:
-            delete_btn = pn.widgets.Button(
-                name="Delete Selected Profile", button_type="danger", width=200
-            )
+            delete_btn = pn.widgets.Button(name="Delete Selected Profile", button_type="danger", width=200)
             delete_btn.on_click(lambda e: self.update_delete_panel(True))
             code = get_js_loading_code("btn")
             delete_btn.js_on_click(args={"btn": delete_btn}, code=code)
 
-            return pn.Column(
-                self.param.environment_profile_delete, pn.Row(delete_btn, align="end")
-            )
+            return pn.Column(self.param.environment_profile_delete, pn.Row(delete_btn, align="end"))
 
     @param.depends("show_save_panel")
     def save_panel(self):
         if self.show_save_panel:
             save_btn = pn.widgets.Button(name="Save", button_type="success", width=100)
             save_btn.on_click(self._save_current_profile)
-            cancel_btn = pn.widgets.Button(
-                name="Cancel", button_type="danger", width=100
-            )
+            cancel_btn = pn.widgets.Button(name="Cancel", button_type="danger", width=100)
             cancel_btn.on_click(self.cancel_save)
 
             code = f"o.disabled=true; {get_js_loading_code('btn')}"
@@ -646,19 +597,13 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             self.revert_btn.css_classes = ["temp"]
             self.revert_btn.css_classes = []
 
-            save_btn = pn.widgets.Button(
-                name="Save Current Profile", button_type="success", width=200
-            )
+            save_btn = pn.widgets.Button(name="Save Current Profile", button_type="success", width=200)
             save_btn.on_click(self.update_save_panel)
 
             code = get_js_loading_code("btn")
 
-            save_btn.js_on_click(
-                args={"btn": save_btn, "o": self.revert_btn}, code=code
-            )
-            self.revert_btn.js_on_click(
-                args={"btn": self.revert_btn, "o": save_btn}, code=code
-            )
+            save_btn.js_on_click(args={"btn": save_btn, "o": self.revert_btn}, code=code)
+            self.revert_btn.js_on_click(args={"btn": self.revert_btn, "o": save_btn}, code=code)
 
             return pn.Column(
                 pn.Row(save_btn, self.revert_btn, align="end"),
@@ -675,9 +620,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             await self._load_profiles()
 
         # Load default profile
-        default = await self.get_default_profile(
-            self.selected_version, use_general_default=True
-        )
+        default = await self.get_default_profile(self.selected_version, use_general_default=True)
         # ensure that profile isn't reloaded if it was previously set (which would override any changes made).
         if default is not None and default.name != self.environment_profile:
             await self._populate_profile_from_saved(default.name)
@@ -717,15 +660,10 @@ class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
         self.profile_management_card.collapsed = True
 
     def set_pbs_options_alert(self, msg, alert_type="warning"):
-        self.pbs_options_pane[1] = (
-            pn.pane.Alert(msg, alert_type=alert_type) if msg else None
-        )
+        self.pbs_options_pane[1] = pn.pane.Alert(msg, alert_type=alert_type) if msg else None
 
     def validate_version(self):
-        if (
-            self.environment_variables.get(self.version_environment_variable)
-            != self.selected_version
-        ):
+        if self.environment_variables.get(self.version_environment_variable) != self.selected_version:
             self.set_pbs_options_alert(
                 f"The selected profile does not match the selected version ({self.selected_version}). "
                 f'Please select a compatible profile, or go the the "Environment" tab to create a new profile.'
@@ -755,9 +693,7 @@ class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
 
     def pbs_options_view(self):
         self.pbs_options_pane = super().pbs_options_view()
-        self.pbs_options_pane.insert(
-            0, pn.widgets.Select.from_param(self.param.environment_profile, width=300)
-        )
+        self.pbs_options_pane.insert(0, pn.widgets.Select.from_param(self.param.environment_profile, width=300))
         self.pbs_options_pane.insert(1, None)
         self.pbs_options_pane.insert(2, pn.layout.Divider(width=300))
         self.pbs_options_pane.sizing_mode = "stretch_width"
@@ -770,9 +706,7 @@ class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
         row = super().action_button()
         for btn in row:
             if btn.name in ["Submit", "Cancel"]:
-                btn.js_on_click(
-                    code=f'setTimeout(function(){{window.location.href="{self.redirect_url}";}}, 5000)'
-                )
+                btn.js_on_click(code=f'setTimeout(function(){{window.location.href="{self.redirect_url}";}}, 5000)')
 
         return row
 
@@ -781,9 +715,7 @@ class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
         return None
 
     async def submit(self, custom_logs=None):
-        self.job.script = (
-            self.pbs_script
-        )  # update script to ensure it reflects any UI updates
+        self.job.script = self.pbs_script  # update script to ensure it reflects any UI updates
         job = await UitPlusJob.instance_from_pbs_job(self.job, self.tethys_user)
         job.custom_logs = custom_logs or self.custom_logs
         job.transfer_output_files = self.transfer_output_files
