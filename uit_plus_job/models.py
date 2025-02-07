@@ -4,7 +4,6 @@ import os
 import posixpath
 import re
 import shutil
-import threading
 import inspect
 import logging
 import datetime as dt
@@ -562,7 +561,7 @@ class UitPlusJob(PbsScript, TethysJob):
             if self._status == "RUN" and (old_status in ("PEN", "SUB")):
                 self.start_time = timezone.now()
             if self._status in ["COM", "VCP", "RES"]:
-                self._safe_process_results()
+                await self.async_process_results()
             elif self._status == "ERR" or self._status == "ABT":
                 self.completion_time = timezone.now()
 
@@ -600,9 +599,7 @@ class UitPlusJob(PbsScript, TethysJob):
         if self.transfer_intermediate_files:
             if self.intermediate_transfer_interval_exceeded:
                 self.last_intermediate_transfer = timezone.now()  # move this to get_intermediate_results
-                thread = threading.Thread(target=self.get_intermediate_results)
-                thread.daemon = True
-                thread.start()
+                await self.get_intermediate_results()
         await self._safe_save()
 
     def set_archived_status(self, value):
@@ -623,13 +620,18 @@ class UitPlusJob(PbsScript, TethysJob):
         minutes = delta_time.days * 24 * 60 + delta_time.seconds / 60
         return minutes > self.intermediate_transfer_interval
 
-    def _process_results(self):
+    async def async_process_results(self):
         """Process the results using the UIT Plus Python client."""
-        self.get_remote_files(self.transfer_output_files)
+        log.debug("Started processing results for job: {}".format(self))
+        await self.get_remote_files(self.transfer_output_files)
+        self.completion_time = timezone.now()
+        self._status = "COM"
+        await self._safe_save()
+        log.debug("Finished processing results for job: {}".format(self))
 
-    def get_intermediate_results(self):
+    async def get_intermediate_results(self):
         """Retrieve intermediate result files from the supercomputer."""
-        if self.get_remote_files(self.transfer_intermediate_files):
+        if await self.get_remote_files(self.transfer_intermediate_files):
             if self.process_intermediate_results_function:
                 self.process_intermediate_results_function()
 
@@ -643,7 +645,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 resolved_paths.append(self.pbs_job.resolve_path(p))
         return resolved_paths
 
-    def get_remote_files(self, remote_filenames):
+    async def get_remote_files(self, remote_filenames):
         """Transfer files from a directory on the super computer.
 
         Args:
@@ -664,7 +666,7 @@ class UitPlusJob(PbsScript, TethysJob):
             local_path.parent.mkdir(parents=True, exist_ok=True)
 
             try:
-                self.client.get_file(remote_path=remote_path, local_path=local_path)
+                await self.client.get_file(remote_path=remote_path, local_path=local_path)
                 if not os.path.exists(local_path):
                     success = False
             except RuntimeError as e:
