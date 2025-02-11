@@ -10,7 +10,7 @@ from django.contrib.auth.models import User
 from channels.db import database_sync_to_async
 from uit_plus_job.models import UitPlusJob, EnvironmentProfile
 from uit.gui_tools.submit import HpcSubmit, PbsScriptAdvancedInputs
-from uit.gui_tools import FileSelector, HpcFileBrowser, get_js_loading_code
+from uit.gui_tools import FileSelector, get_js_loading_code, create_file_browser
 
 
 log = logging.getLogger(__name__)
@@ -120,7 +120,7 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
             help_text="Load environment from a PBS file",
         )
         select_pbs.param.watch(self._parse_remote_pbs, "file_path")
-        select_pbs.file_browser = HpcFileBrowser(self.uit_client, delayed_init=False, patterns=["*.pbs", "*.sh"])
+        select_pbs.file_browser = create_file_browser(self.uit_client, delayed_init=False, patterns=["*.pbs", "*.sh"])
         select_pbs.show_browser = True
         fbp = select_pbs.panel
         fbp.visible = False
@@ -498,10 +498,10 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
         self.pbs_body = str(e.new.decode("ascii"))
         self._populate_from_pbs()
 
-    def _parse_remote_pbs(self, e):
+    async def _parse_remote_pbs(self, e):
         pbs_file_path = e.obj.file_path or ""
         if pbs_file_path.endswith(".pbs") or pbs_file_path.endswith(".sh"):
-            self.pbs_body = self.uit_client.call(f"cat {pbs_file_path}")
+            self.pbs_body = await self.await_if_async(self.uit_client.call(f"cat {pbs_file_path}"))
             self._populate_from_pbs()
             e.obj.show_browser = False
 
