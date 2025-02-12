@@ -216,7 +216,6 @@ class UitPlusJob(PbsScript, TethysJob):
         super().delete(using, keep_parents)
 
     @classmethod
-    @database_sync_to_async
     def instance_from_pbs_job(cls, job, user):
         script = job.script
         instance = cls(
@@ -806,7 +805,7 @@ class UitPlusJob(PbsScript, TethysJob):
         job._remote_workspace_id = self._remote_workspace_id
 
         job.description = f"Archive job: {self.name} ({self.job_id})"
-        job_model = await self.instance_from_pbs_job(job, self.user)
+        job_model = await database_sync_to_async(self.instance_from_pbs_job)(job, self.user)
         # Put job id in extended properties
         save_script_attrs = [
             "name",
@@ -861,7 +860,7 @@ class UitPlusJob(PbsScript, TethysJob):
         await self.resubmit()
 
         # Check database for archived job
-        self.update_job_after_restore(self.extended_properties.get("archived_job_id"))
+        await self.update_job_after_restore(self.extended_properties.get("archived_job_id"))
 
     @database_sync_to_async
     def update_job_after_restore(self, job_id):
@@ -884,7 +883,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 pbs_job._remote_workspace_id = self._remote_workspace_id
                 pbs_job._job_id = job_id
                 restored = self.instance_from_pbs_job(pbs_job, self.user)
-                restored.status = "Complete"
+                restored._status = "COM"
                 restored.save()
 
 
