@@ -561,7 +561,7 @@ class UitPlusJob(PbsScript, TethysJob):
             if self._status == "RUN" and (old_status in ("PEN", "SUB")):
                 self.start_time = timezone.now()
             if self._status in ["COM", "VCP", "RES"]:
-                await self.async_process_results()
+                await self.process_results()
             elif self._status == "ERR" or self._status == "ABT":
                 self.completion_time = timezone.now()
 
@@ -620,7 +620,7 @@ class UitPlusJob(PbsScript, TethysJob):
         minutes = delta_time.days * 24 * 60 + delta_time.seconds / 60
         return minutes > self.intermediate_transfer_interval
 
-    async def async_process_results(self):
+    async def process_results(self):
         """Process the results using the UIT Plus Python client."""
         log.debug("Started processing results for job: {}".format(self))
         await self.get_remote_files(self.transfer_output_files)
