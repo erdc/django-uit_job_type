@@ -202,10 +202,6 @@ class UitPlusJob(PbsScript, TethysJob):
     def _safe_save(self):
         self.save()
 
-    @database_sync_to_async
-    def _safe_process_results(self):
-        self.process_results()
-
     async def safe_close(self):
         if self._client is not None:
             await self.client.safe_close()
