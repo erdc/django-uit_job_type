@@ -1,4 +1,5 @@
-import mock
+import asyncio
+from unittest import mock
 import datetime
 from uit_plus_job.models import UitPlusJob
 from uit.exceptions import DpRouteError
@@ -343,7 +344,9 @@ class TestUitPlusJob(TransactionTestCase):
         remote_files_names = ["file1.xml"]
         remote_dir = "WORKDIR"
         mock_client.get_file.return_value = {"success": True}
-        self.assertFalse(self.uitplusjob.get_remote_files(remote_dir=remote_dir, remote_filenames=remote_files_names))
+        self.assertFalse(
+            asyncio.run(self.uitplusjob.get_remote_files(remote_dir=remote_dir, remote_filenames=remote_files_names))
+        )
 
     @mock.patch("uit_plus_job.models.log")
     @mock.patch("uit_plus_job.models.UitPlusJob.client")
@@ -353,7 +356,7 @@ class TestUitPlusJob(TransactionTestCase):
         mock_client.get_file.side_effect = IOError
 
         # call the method
-        ret = self.uitplusjob.get_remote_files(remote_dir=remote_dir, remote_filenames=remote_files_names)
+        ret = asyncio.run(self.uitplusjob.get_remote_files(remote_dir=remote_dir, remote_filenames=remote_files_names))
 
         # test results
         self.assertFalse(ret)
@@ -367,7 +370,7 @@ class TestUitPlusJob(TransactionTestCase):
         mock_os.path.join.side_effect = ["local_path", "remote_path"]
         mock_client.get_file.return_value = {"success": True}
         mock_os.path.exists.return_value = True
-        ret = self.uitplusjob.get_remote_files(remote_dir=remote_dir, remote_filenames=remote_files_names)
+        ret = asyncio.run(self.uitplusjob.get_remote_files(remote_dir=remote_dir, remote_filenames=remote_files_names))
 
         # test results
         self.assertTrue(ret)
