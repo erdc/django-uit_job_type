@@ -211,7 +211,6 @@ class UitPlusJob(PbsScript, TethysJob):
         super().delete(using, keep_parents)
 
     @classmethod
-    @database_sync_to_async
     def instance_from_pbs_job(cls, job, user):
         script = job.script
         instance = cls(
@@ -311,15 +310,14 @@ class UitPlusJob(PbsScript, TethysJob):
         m = re.match(r"PbsDirective\(directive='(.*?)', options='(.*?)'\)", directive_str)
         return PbsDirective(*m.groups())
 
-    @property
-    def archive_dir(self):
+    async def get_archive_dir(self):
         """Get the job archive directory from the HPC.
 
         Returns:
             str: Archive Directory
         """
         if self._archive_dir is None:
-            archive_home = self.get_environment_variable("ARCHIVE_HOME")
+            archive_home = await self.get_environment_variable("ARCHIVE_HOME")
             self._archive_dir = posixpath.join(archive_home, self.remote_workspace_suffix)
         return self._archive_dir
 
@@ -428,9 +426,9 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         return self.pbs_job.working_dir
 
-    def is_job_archived(self):
+    async def is_job_archived(self):
         archive_filename = f"job_{self.remote_workspace_id}.run_files.tar.gz"
-        archive_files = self.client.list_dir(self.archive_dir).get("files", [])
+        archive_files = self.client.list_dir(await self.get_archive_dir()).get("files", [])
         return archive_filename in [file["name"] for file in archive_files]
 
     @_ensure_connected
@@ -459,7 +457,7 @@ class UitPlusJob(PbsScript, TethysJob):
             },
         }
 
-    def get_environment_variable(self, variable):
+    async def get_environment_variable(self, variable):
         """Get the value of an environment variable from the HPC.
 
         Args:
@@ -468,7 +466,7 @@ class UitPlusJob(PbsScript, TethysJob):
         Returns:
             str: value of environment variable.
         """
-        return self.client.env.get(variable)
+        return await self.client.env.get_environmental_variable(variable)
 
     @_ensure_connected
     async def execute(self, *args, **kwargs):
@@ -598,6 +596,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 await self.get_intermediate_results()
         await self._safe_save()
 
+    @database_sync_to_async
     def set_archived_status(self, value):
         archived_job_id = self.extended_properties.get("archived_job_id")
         if archived_job_id:
@@ -742,13 +741,13 @@ class UitPlusJob(PbsScript, TethysJob):
                 tg.create_task(asyncio.to_thread(shutil.rmtree, self.workspace, True))
 
             if remote:
+                # Remove remote locations
                 if archive:
-                    cmd = f"archive rm -rf {self.archive_dir} || true"
+                    path = await self.get_archive_dir()
+                    cmd = f"archive rm -rf {path} || true"
                     tg.create_task(self.client.call(command=cmd, working_dir="/"))
                     self.set_archived_status(False)
-                    log.info(f"Executing command '{cmd}' on {self.system}")
                 else:
-                    # Remove remote locations
                     for path in (self.working_dir, self.home_dir):
                         cmd = f"rm -rf {path} || true"
                         tg.create_task(self.client.call(command=cmd, working_dir="/"))
@@ -794,7 +793,7 @@ class UitPlusJob(PbsScript, TethysJob):
         )
         pbs_script.execution_block = (
             f"tar -czf {archive_filename} *\n"
-            f"archive put -p -C {self.archive_dir} {archive_filename}\n"
+            f"archive put -p -C {await self.get_archive_dir()} {archive_filename}\n"
             f"rm {archive_filename}\n"
         )
 
@@ -804,7 +803,7 @@ class UitPlusJob(PbsScript, TethysJob):
         job._remote_workspace_id = self._remote_workspace_id
 
         job.description = f"Archive job: {self.name} ({self.job_id})"
-        job_model = await self.instance_from_pbs_job(job, self.user)
+        job_model = await database_sync_to_async(self.instance_from_pbs_job)(job, self.user)
         # Put job id in extended properties
         save_script_attrs = [
             "name",
@@ -849,7 +848,7 @@ class UitPlusJob(PbsScript, TethysJob):
 
         # Create transfer script
         self.execution_block = (
-            f"archive get -p -C {self.archive_dir} {archive_filename}\n"
+            f"archive get -p -C {await self.get_archive_dir()} {archive_filename}\n"
             f"tar -xzf {archive_filename}\n"
             f"rm {archive_filename}\n"
         )
@@ -859,7 +858,11 @@ class UitPlusJob(PbsScript, TethysJob):
         await self.resubmit()
 
         # Check database for archived job
-        job_id = self.extended_properties.get("archived_job_id")
+        await self.update_job_after_restore(self.extended_properties.get("archived_job_id"))
+
+    @database_sync_to_async
+    def update_job_after_restore(self, job_id):
+        """After restoring from the archive, recreate job in the main jobs_table if it does not already exist"""
         if job_id is not None:
             try:
                 self.__class__.objects.get(job_id=job_id)
@@ -877,8 +880,8 @@ class UitPlusJob(PbsScript, TethysJob):
                 pbs_job._remote_workspace = self._remote_workspace
                 pbs_job._remote_workspace_id = self._remote_workspace_id
                 pbs_job._job_id = job_id
-                restored = await self.instance_from_pbs_job(pbs_job, self.user)
-                restored.status = "Complete"
+                restored = self.instance_from_pbs_job(pbs_job, self.user)
+                restored._status = "COM"
                 restored.save()
 
 
