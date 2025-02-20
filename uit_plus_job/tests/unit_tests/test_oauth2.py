@@ -34,9 +34,9 @@ class UitPlusOAuth2Tests(unittest.TestCase):
         self.assertIn(("USERNAME", "email"), self.auth.EXTRA_DATA)
         self.assertIn(("USERNAME", "id"), self.auth.EXTRA_DATA)
         self.assertIn(("SYSTEMS", "systems"), self.auth.EXTRA_DATA)
-        self.assertIn(("access_token_expires_on", "expires_in"), self.auth.EXTRA_DATA)
+        self.assertIn(("access_token_expires_on", "expires"), self.auth.EXTRA_DATA)
         self.assertIn(("refresh_token", "refresh_token"), self.auth.EXTRA_DATA)
-        self.assertIn(("refresh_token_expires_on", "refresh_expires_in"), self.auth.EXTRA_DATA)
+        self.assertIn(("refresh_token_expires_on", "refresh_expires_on"), self.auth.EXTRA_DATA)
 
     def test_get_user_details_with_hpc_username(self):
         hpc_username = "foo@bar.com"
