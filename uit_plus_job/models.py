@@ -19,7 +19,7 @@ from django.contrib.auth.models import User
 from tethys_apps.base.function_extractor import TethysFunctionExtractor
 from uit.exceptions import UITError
 from uit import AsyncClient, PbsScript, PbsJob, PbsArrayJob
-from uit.pbs_script import PbsDirective, NODE_TYPES
+from uit.pbs_script import PbsDirective
 from tethys_compute.models.tethys_job import TethysJob
 
 
@@ -78,10 +78,6 @@ class UitPlusJob(PbsScript, TethysJob):
         "ERR": "F",
     }
 
-    SYSTEM_CHOICES = [(s, s) for s in sorted(NODE_TYPES.keys())]
-
-    NODE_TYPE_CHOICES = [(nt, nt) for nt in sorted({nt for s in NODE_TYPES.values() for nt in s.keys()})]
-
     # job vars
     job_id = models.CharField(max_length=1024, null=True)
     archive_input_files = JSONField(blank=True, default=list, null=True)
@@ -89,6 +85,7 @@ class UitPlusJob(PbsScript, TethysJob):
     transfer_input_files = JSONField(blank=True, default=list, null=True)
     _remote_workspace = models.TextField(blank=True)
     _remote_workspace_id = models.CharField(max_length=100)
+    _base_dir = models.TextField(blank=True)
     qstat = JSONField(default=dict, null=True)
     archived = models.BooleanField(default=False)
 
@@ -98,8 +95,8 @@ class UitPlusJob(PbsScript, TethysJob):
     processes_per_node = models.IntegerField(default=1, null=False)
     _max_time = models.DurationField(null=False)
     queue = models.CharField(max_length=100, default="debug", null=False)
-    node_type = models.CharField(max_length=10, choices=NODE_TYPE_CHOICES, default="compute", null=False)
-    system = models.CharField(max_length=10, choices=SYSTEM_CHOICES, default="onyx", null=False)
+    node_type = models.CharField(max_length=10, default="compute", null=False)
+    system = models.CharField(max_length=10, null=False)
     execution_block = models.TextField(null=False)
     _modules = JSONField(default=dict, null=True)
     _module_use = JSONField(default=dict, null=True)
@@ -245,6 +242,7 @@ class UitPlusJob(PbsScript, TethysJob):
             transfer_output_files=[],
             _remote_workspace_id=job._remote_workspace_id,
             _remote_workspace=job._remote_workspace,
+            _base_dir=job._base_dir,
         )
         instance.environment_variables = script._environment_variables
         instance._pbs_job = job
@@ -270,6 +268,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 archive_input_files=self.archive_input_files,
                 description=self.description,
                 metadata=self.extended_properties,
+                base_dir=self._base_dir if self._base_dir else None,
             )
             j._remote_workspace_id = self._remote_workspace_id
             j._remote_workspace = PurePosixPath(self._remote_workspace)
