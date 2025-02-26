@@ -7,7 +7,7 @@
 ********************************************************************************
 """
 
-from datetime import datetime
+from datetime import datetime, UTC, timedelta
 
 from social_core.backends.oauth import BaseOAuth2
 from uit.uit import DEFAULT_CA_FILE
@@ -37,15 +37,20 @@ class UitPlusOAuth2(BaseOAuth2):
         ("USERNAME", "email"),
         ("USERNAME", "id"),
         ("SYSTEMS", "systems"),
-        ("access_token_expires_on", "expires"),
+        ("expires_on", "expires_on"),
+        ("expires_in", "expires_in"),
+        ("expires_in", "expires"),
         ("refresh_token", "refresh_token"),
-        ("refresh_token_expires_on", "refresh_expires_on"),
+        ("refresh_token_expires_on", "refresh_token_expires_on"),
+        ("access_token_expires_on", "access_token_expires_on"),
     ]
 
     def extra_data(self, user, uid, response, details=None, *args, **kwargs):
         # convert date string to timestamp
-        expires_time = datetime.fromisoformat(response["access_token_expires_on"].replace("Z", ""))
-        response["access_token_expires_on"] = datetime.timestamp(expires_time)
+        expires_time = datetime.fromisoformat(response["access_token_expires_on"])
+        auth_time = datetime.now(UTC)
+        response["expires_on"] = datetime.timestamp(expires_time - timedelta(days=2))
+        response["expires_in"] = (expires_time - auth_time).seconds
         return super().extra_data(user, uid, response, details, *args, **kwargs)
 
     def get_user_details(self, response):
