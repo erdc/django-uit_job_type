@@ -16,6 +16,7 @@ from django.db import models
 from django.utils import timezone
 from django.db.models import JSONField
 from django.contrib.auth.models import User
+from social_django.utils import load_strategy
 from tethys_apps.base.function_extractor import TethysFunctionExtractor
 from uit.exceptions import UITError
 from uit import AsyncClient, PbsScript, PbsJob, PbsArrayJob
@@ -401,7 +402,7 @@ class UitPlusJob(PbsScript, TethysJob):
     def get_token(self):
         try:
             social = self.user.social_auth.get(provider="UITPlus")
-            self._token = social.extra_data["access_token"]
+            self._token = social.get_access_token(load_strategy())
         except (KeyError, AttributeError):
             self._token = None
 
