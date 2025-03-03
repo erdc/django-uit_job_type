@@ -702,7 +702,6 @@ class UitPlusJob(PbsScript, TethysJob):
         """
         return await self.pbs_job.release()
 
-    @_ensure_connected
     async def delete(self, using=None, keep_parents=False):
         """Stops the job and cleans up workspaces in order to delete the job."""
         try:
