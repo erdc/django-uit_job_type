@@ -640,22 +640,29 @@ class UitPlusJob(PbsScript, TethysJob):
                 resolved_paths.append(self.pbs_job.resolve_path(p))
         return resolved_paths
 
-    async def get_remote_files(self, remote_filenames):
+    async def get_remote_files(self, remote_paths):
         """Transfer files from a directory on the super computer.
 
         Args:
-            remote_filenames (List[str]): Files to retrieve from remote_dir
+            remote_paths (List[str]): Files to retrieve from remote_dir
 
         Returns:
             bool: True if all file transfers succeed.
         """
+        remote_dirnames = []
+        if isinstance(remote_paths, dict):
+            remote_dirnames = remote_paths.get("dirs", [])
+            remote_filenames = remote_paths.get("files", [])
+        else:
+            remote_filenames = remote_paths
 
         # Ensure the local transfer directory exists
         workspace = Path(self.workspace)
         success = True
-        remote_paths = self.resolve_paths(remote_filenames)
+        remote_file_paths = self.resolve_paths(remote_filenames)
+        remote_dir_paths = self.resolve_paths(remote_dirnames)
 
-        for remote_path in remote_paths:
+        for remote_path in remote_file_paths:
             rel_path = remote_path.relative_to(self.working_dir)
             local_path = workspace / rel_path
             local_path.parent.mkdir(parents=True, exist_ok=True)
@@ -667,6 +674,14 @@ class UitPlusJob(PbsScript, TethysJob):
             except RuntimeError as e:
                 success = False
                 log.error("Failed to get remote file: {}".format(str(e)))
+
+        for remote_dir in remote_dir_paths:
+            rel_path = remote_dir.relative_to(self.working_dir)
+            local_dir = workspace / rel_path
+            try:
+                await self.client.get_dir(remote_dir=remote_dir, local_dir=local_dir)
+            except Exception as e:
+                log.exception(e)
 
         return success
 

@@ -711,12 +711,27 @@ class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
         return row
 
     @property
+    def transfer_input_files(self):
+        return None
+
+    @property
+    def transfer_intermediate_files(self):
+        return None
+
+    @property
     def transfer_output_files(self):
         return None
+
+    @property
+    def intermediate_transfer_interval(self):
+        return 0
 
     async def submit(self, custom_logs=None):
         self.job.script = self.pbs_script  # update script to ensure it reflects any UI updates
         job = await database_sync_to_async(UitPlusJob.instance_from_pbs_job)(self.job, self.tethys_user)
         job.custom_logs = custom_logs or self.custom_logs
+        job.transfer_input_files = self.transfer_input_files
+        job.transfer_intermediate_files = self.transfer_intermediate_files
         job.transfer_output_files = self.transfer_output_files
+        job.intermediate_transfer_interval = self.intermediate_transfer_interval
         await job.execute()
