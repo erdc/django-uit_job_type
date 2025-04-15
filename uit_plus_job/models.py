@@ -368,11 +368,11 @@ class UitPlusJob(PbsScript, TethysJob):
     @process_intermediate_results_function.setter
     def process_intermediate_results_function(self, function):
         if isinstance(function, str):
-            self._process_results_function = function
+            self._process_intermediate_results_function = function
             return
         module_path = inspect.getmodule(function).__name__.split(".")
         module_path.append(function.__name__)
-        self._process_results_function = ".".join(module_path)
+        self._process_intermediate_results_function = ".".join(module_path)
 
     @property
     def remote_workspace_id(self):
@@ -617,18 +617,20 @@ class UitPlusJob(PbsScript, TethysJob):
 
     async def process_results(self):
         """Process the results using the UIT Plus Python client."""
-        log.debug("Started processing results for job: {}".format(self))
+        log.debug(f"Started processing results for job: {self}")
         await self.get_remote_files(self.transfer_output_files)
         self.completion_time = timezone.now()
         self._status = "COM"
         await self._safe_save()
-        log.debug("Finished processing results for job: {}".format(self))
+        if self.process_results_function:
+            self.process_results_function(self)
+        log.debug(f"Finished processing results for job: {self}")
 
     async def get_intermediate_results(self):
         """Retrieve intermediate result files from the supercomputer."""
         if await self.get_remote_files(self.transfer_intermediate_files):
             if self.process_intermediate_results_function:
-                self.process_intermediate_results_function()
+                self.process_intermediate_results_function(self)
 
     def resolve_paths(self, paths):
         resolved_paths = []
