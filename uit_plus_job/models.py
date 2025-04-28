@@ -551,10 +551,7 @@ class UitPlusJob(PbsScript, TethysJob):
                 await self._update_status(*args, **kwargs)
                 self._last_status_update = timezone.now()
             except (MaxRetriesError, UITError) as e:
-                log.info(
-                    f"Unable to connect to {self.system} for user {self.user}"
-                    f" due to the following error: {e}"
-                )
+                log.info(f"Unable to connect to {self.system} for user {self.user} due to the following error: {e}")
                 return
 
         # Post-process status after update if old status was pending/running
