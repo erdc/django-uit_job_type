@@ -18,7 +18,7 @@ from django.db.models import JSONField
 from django.contrib.auth.models import User
 from social_django.utils import load_strategy
 from tethys_apps.base.function_extractor import TethysFunctionExtractor
-from uit.exceptions import UITError
+from uit.exceptions import MaxRetriesError, UITError
 from uit import AsyncClient, PbsScript, PbsJob, PbsArrayJob
 from uit.pbs_script import PbsDirective
 from tethys_compute.models.tethys_job import TethysJob
@@ -547,8 +547,15 @@ class UitPlusJob(PbsScript, TethysJob):
 
         # Update status if status not given and still pending/running
         elif update_needed and self.is_time_to_update():
-            await self._update_status(*args, **kwargs)
-            self._last_status_update = timezone.now()
+            try:
+                await self._update_status(*args, **kwargs)
+                self._last_status_update = timezone.now()
+            except (MaxRetriesError, UITError) as e:
+                log.info(
+                    f"Unable to connect to {self.system} for user {self.user}"
+                    f" due to the following error: {e}"
+                )
+                return
 
         # Post-process status after update if old status was pending/running
         if update_needed:
