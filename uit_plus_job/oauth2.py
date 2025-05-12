@@ -91,7 +91,11 @@ class UitPlusOAuth2(BaseOAuth2):
             return response
 
     def setting(self, name, default=None):
-        """Point the VERIFY_SSL setting to the dodcerts module, which has a dynamic location"""
+        """Point the VERIFY_SSL setting to the dodcerts module
+
+        The certificate file provided by dodcerts could be installed in several different locations,
+        and that makes it impractical to set VERIFY_SSL in a config file."""
         if name == "VERIFY_SSL":
-            default = DEFAULT_CA_FILE  # Allow a config file to override this
+            # Modify only the default here so the config file can override this change
+            default = DEFAULT_CA_FILE
         return super().setting(name, default)
