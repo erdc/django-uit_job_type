@@ -652,12 +652,14 @@ class TethysProfileManagement(PbsScriptAdvancedInputs):
 
 class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
     custom_logs = None
-    redirect_url = "/"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.pbs_options_pane = None
         self.profile_management_card.collapsed = True
+
+    def redirect_url(self):
+        return "/"
 
     def set_pbs_options_alert(self, msg, alert_type="warning"):
         self.pbs_options_pane[1] = pn.pane.Alert(msg, alert_type=alert_type) if msg else None
@@ -700,15 +702,6 @@ class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
         self.pbs_options_pane.max_width = 800
 
         return self.pbs_options_pane
-
-    @param.depends("disable_validation", "validated")
-    def action_button(self):
-        row = super().action_button()
-        for btn in row:
-            if btn.name in ["Submit", "Cancel"]:
-                btn.js_on_click(code=f'setTimeout(function(){{window.location.href="{self.redirect_url}";}}, 5000)')
-
-        return row
 
     @property
     def transfer_output_files(self):

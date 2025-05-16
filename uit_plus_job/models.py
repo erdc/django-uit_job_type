@@ -479,7 +479,11 @@ class UitPlusJob(PbsScript, TethysJob):
             self._status = "SUB"
         except Exception:
             self._status = "ERR"
-        await self._safe_save()
+        if self.job_id:
+            await self._safe_save()
+        else:
+            # If job_id is None, then the job failed to submit and we can delete the database entry
+            await self.delete()
 
     async def _execute(self, remote_name=None):
         """Execute the job using the UIT Plus Python client."""
