@@ -90,5 +90,12 @@ class UitPlusOAuth2(BaseOAuth2):
             # Return the get token response if errors occur
             return response
 
-    def request(self, url, method="GET", *args, **kwargs):  # noqa: B026
-        return super().request(url, method, *args, verify=DEFAULT_CA_FILE, **kwargs)
+    def setting(self, name, default=None):
+        """Point the VERIFY_SSL setting to the dodcerts module
+
+        The certificate file provided by dodcerts could be installed in several different locations,
+        and that makes it impractical to set VERIFY_SSL in a config file."""
+        if name == "VERIFY_SSL":
+            # Modify only the default here so the config file can override this change
+            default = DEFAULT_CA_FILE
+        return super().setting(name, default)
