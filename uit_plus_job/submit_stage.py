@@ -655,14 +655,17 @@ class TethysHpcSubmit(HpcSubmit, TethysProfileManagement):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.pbs_options_pane = None
+        self.pbs_options_pane = []
         self.profile_management_card.collapsed = True
 
     def redirect_url(self):
         return "/"
 
     def set_pbs_options_alert(self, msg, alert_type="warning"):
-        self.pbs_options_pane[1] = pn.pane.Alert(msg, alert_type=alert_type) if msg else None
+        if len(self.pbs_options_pane) > 1:
+            self.pbs_options_pane[1] = pn.pane.Alert(msg, alert_type=alert_type) if msg else None
+        else:
+            self.pbs_options_pane.append(pn.pane.Alert(msg, alert_type=alert_type) if msg else None)
 
     def validate_version(self):
         if self.environment_variables.get(self.version_environment_variable) != self.selected_version:
